@@ -12,8 +12,9 @@ yarn.lock
 .env.local
 .env.*.local
 
-firebaseAdmin/json
-firebaseServiceKey.json
+backendfirebaseAdmin.json
+backend/firebaseServiceKey.json
+
 # Build output
 dist/
 build/
