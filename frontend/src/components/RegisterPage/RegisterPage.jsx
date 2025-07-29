@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { app } from "../../config/firebase";
+
 import {
     MessageCircle,
     Mail,
@@ -26,12 +30,14 @@ import {
 } from 'lucide-react';
 
 const RegisterPage = () => {
+    const navigate = useNavigate();
     const [formErrors, setFormErrors] = useState({});
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [profileImage, setProfileImage] = useState(null);
     const [profileImagePreview, setProfileImagePreview] = useState(null);
     const fileInputRef = useRef(null);
+
     const [formData, setFormData] = useState({
         username: '',
         fullName: '',
@@ -58,6 +64,7 @@ const RegisterPage = () => {
 
     const strengthLabels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
     const strengthColors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'];
+
 
     useEffect(() => {
         const handleMouseMove = (e) => {
@@ -87,6 +94,41 @@ const RegisterPage = () => {
         if (/[^A-Za-z0-9]/.test(password)) strength++;
         setPasswordStrength(strength);
     };
+
+    const handleGoogleSignIn = async () => {
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        try {
+            const result = await signInWithPopup(auth, provider);
+            const user = result.user;
+
+            console.log("✅ Google Sign-In successful:", user);
+
+            toast.success(`Welcome ${user.displayName || 'User'}!`, {
+                position: "top-right",
+                autoClose: 3000,
+            });
+
+            navigate("/chatify");
+        } catch (error) {
+            console.error("Google Sign-In Error:", error);
+
+            let message = "Google Sign-In failed. Please allow popups and try again.";
+
+            if (error.code === "auth/popup-blocked") {
+                message = "Popup blocked. Please enable popups in your browser settings.";
+            } else if (error.code === "auth/cancelled-popup-request") {
+                message = "Popup request was cancelled. Please try again.";
+            }
+
+            toast.error(message, {
+                position: "top-right",
+                autoClose: 5000,
+            });
+        }
+    };
+
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -200,22 +242,63 @@ const RegisterPage = () => {
         return Object.keys(errors).length === 0;
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        if (validateForm()) {
-            toast.success('🎉 Account created successfully! Welcome to Chatify!', {
-                position: "top-right",
-                autoClose: 5000,
-                hideProgressBar: false,
-                closeOnClick: true,
-                pauseOnHover: true,
-                draggable: true,
-            });
-            console.log('Registration data:', { ...formData, profileImage });
-        } else {
+        if (!validateForm()) {
             toast.error('Please fix the errors below');
+            return;
+        }
+
+        try {
+            const formDataToSend = new FormData();
+            formDataToSend.append('username', formData.username);
+            formDataToSend.append('fullName', formData.fullName);
+            formDataToSend.append('email', formData.email);
+            formDataToSend.append('phone', formData.phone);
+            formDataToSend.append('password', formData.password);
+            if (formData.profileImage) {
+                formDataToSend.append('profileImage', formData.profileImage);
+            }
+
+            const response = await fetch('http://localhost:3000/auth/register', {
+                method: 'POST',
+                body: formDataToSend // no headers, browser sets correct one
+            });
+            console.log(formDataToSend);
+            const data = await response.json();
+
+            if (response.ok) {
+                toast.success('🎉 Account created successfully! Welcome to Chatify!');
+                setFormData({
+                    username: '',
+                    fullName: '',
+                    email: '',
+                    phone: '',
+                    password: '',
+                    confirmPassword: '',
+                    profileImage: null
+                });
+                setStep(1); // Optional: reset to first step
+                navigate('/chatify');
+            } else {
+                if (data.errors) {
+                    const backendErrors = {};
+                    data.errors.forEach(err => {
+                        backendErrors[err.path] = err.msg;
+                    });
+                    setFormErrors(backendErrors);
+                    toast.error('Please fix the errors from the server.');
+                } else {
+                    toast.error(data.message || 'Registration failed.');
+                }
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error('Something went wrong. Please try again.');
         }
     };
+
+
 
     const nextStep = () => {
         const stepOneFields = ['username', 'fullName', 'email'];
@@ -652,6 +735,7 @@ const RegisterPage = () => {
                                                                 </div>
                                                             )}
                                                         </motion.div>
+
                                                         {profileImagePreview && (
                                                             <motion.button
                                                                 type="button"
@@ -666,15 +750,26 @@ const RegisterPage = () => {
                                                         )}
                                                     </div>
                                                 </div>
+
+                                                {/* ✅ Updated file input */}
                                                 <input
                                                     ref={fileInputRef}
                                                     type="file"
                                                     accept="image/*"
-                                                    onChange={handleImageUpload}
+                                                    onChange={(e) => {
+                                                        const file = e.target.files[0];
+                                                        if (file) {
+                                                            const previewURL = URL.createObjectURL(file);
+                                                            setProfileImagePreview(previewURL); // for preview
+                                                            setFormData((prev) => ({ ...prev, profileImage: file })); // for backend
+                                                        }
+                                                    }}
                                                     className="hidden"
                                                 />
+
                                                 <p className="text-xs text-gray-500 mt-2">Max size: 5MB</p>
                                             </motion.div>
+
 
                                             {/* Phone Number Field */}
                                             <motion.div
@@ -772,7 +867,7 @@ const RegisterPage = () => {
                                                             ))}
                                                         </div>
                                                         <p className={`text-xs font-medium ${passwordStrength <= 2 ? 'text-red-500' :
-                                                                passwordStrength <= 3 ? 'text-yellow-500' : 'text-green-500'
+                                                            passwordStrength <= 3 ? 'text-yellow-500' : 'text-green-500'
                                                             }`}>
                                                             {passwordStrength > 0 ? strengthLabels[passwordStrength - 1] : 'Very Weak'}
                                                         </p>
@@ -922,6 +1017,7 @@ const RegisterPage = () => {
                                         >
                                             <motion.button
                                                 type="button"
+                                                onClick={handleGoogleSignIn}
                                                 className="flex items-center justify-center px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors duration-300 hover:border-purple-300"
                                                 whileHover={{ scale: 1.05, y: -2 }}
                                                 whileTap={{ scale: 0.95 }}
@@ -929,6 +1025,8 @@ const RegisterPage = () => {
                                                 <Chrome className="w-5 h-5 mr-2 text-gray-600" />
                                                 <span className="text-sm font-medium text-gray-700">Google</span>
                                             </motion.button>
+
+
                                             <motion.button
                                                 type="button"
                                                 className="flex items-center justify-center px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors duration-300 hover:border-purple-300"
