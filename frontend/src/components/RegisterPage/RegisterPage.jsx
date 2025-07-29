@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { app } from "../../config/firebase";
+// import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+// import { app } from "../../config/firebase";
 
 import {
     MessageCircle,
@@ -95,39 +95,39 @@ const RegisterPage = () => {
         setPasswordStrength(strength);
     };
 
-    const handleGoogleSignIn = async () => {
-        const auth = getAuth(app);
-        const provider = new GoogleAuthProvider();
+    // const handleGoogleSignIn = async () => {
+    //     const auth = getAuth(app);
+    //     const provider = new GoogleAuthProvider();
 
-        try {
-            const result = await signInWithPopup(auth, provider);
-            const user = result.user;
+    //     try {
+    //         const result = await signInWithPopup(auth, provider);
+    //         const user = result.user;
 
-            console.log("✅ Google Sign-In successful:", user);
+    //         console.log("✅ Google Sign-In successful:", user);
 
-            toast.success(`Welcome ${user.displayName || 'User'}!`, {
-                position: "top-right",
-                autoClose: 3000,
-            });
+    //         toast.success(`Welcome ${user.displayName || 'User'}!`, {
+    //             position: "top-right",
+    //             autoClose: 3000,
+    //         });
 
-            navigate("/chatify");
-        } catch (error) {
-            console.error("Google Sign-In Error:", error);
+    //         navigate("/chatify");
+    //     } catch (error) {
+    //         console.error("Google Sign-In Error:", error);
 
-            let message = "Google Sign-In failed. Please allow popups and try again.";
+    //         let message = "Google Sign-In failed. Please allow popups and try again.";
 
-            if (error.code === "auth/popup-blocked") {
-                message = "Popup blocked. Please enable popups in your browser settings.";
-            } else if (error.code === "auth/cancelled-popup-request") {
-                message = "Popup request was cancelled. Please try again.";
-            }
+    //         if (error.code === "auth/popup-blocked") {
+    //             message = "Popup blocked. Please enable popups in your browser settings.";
+    //         } else if (error.code === "auth/cancelled-popup-request") {
+    //             message = "Popup request was cancelled. Please try again.";
+    //         }
 
-            toast.error(message, {
-                position: "top-right",
-                autoClose: 5000,
-            });
-        }
-    };
+    //         toast.error(message, {
+    //             position: "top-right",
+    //             autoClose: 5000,
+    //         });
+    //     }
+    // };
 
 
     const handleChange = (e) => {
