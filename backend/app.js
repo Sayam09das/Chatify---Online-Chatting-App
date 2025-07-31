@@ -13,6 +13,7 @@ const database = require('./database/db');
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
+const searchUser = require('./routes/searchUser');
 
 // Middleware
 app.use(cors({
@@ -33,6 +34,7 @@ app.use('/uploads', express.static('uploads'));
 // API Routes
 app.use('/auth', authRoutes);
 app.use('/', protectedRoutes);
+app.use('/api/search',searchUser);
 
 
 module.exports = app;
