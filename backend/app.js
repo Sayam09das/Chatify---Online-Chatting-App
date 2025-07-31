@@ -14,10 +14,11 @@ const database = require('./database/db');
 const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const searchUser = require('./routes/searchUser');
+const messageRoutes = require('./routes/messageRoutes');
 
 // Middleware
 app.use(cors({
-    origin: 'http://localhost:5173',
+    origin: '*',
     credentials: true
 }));
 
@@ -35,6 +36,7 @@ app.use('/uploads', express.static('uploads'));
 app.use('/auth', authRoutes);
 app.use('/', protectedRoutes);
 app.use('/api/search',searchUser);
+app.use('/api/messages', messageRoutes);
 
 
 module.exports = app;
