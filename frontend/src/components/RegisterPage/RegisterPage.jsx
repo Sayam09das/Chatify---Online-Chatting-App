@@ -1017,7 +1017,7 @@ const RegisterPage = () => {
                                         >
                                             <motion.button
                                                 type="button"
-                                                onClick={handleGoogleSignIn}
+                                                // onClick={handleGoogleSignIn}
                                                 className="flex items-center justify-center px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors duration-300 hover:border-purple-300"
                                                 whileHover={{ scale: 1.05, y: -2 }}
                                                 whileTap={{ scale: 0.95 }}

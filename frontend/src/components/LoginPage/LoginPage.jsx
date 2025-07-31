@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import {
   MessageCircle,
   Mail,
@@ -17,6 +19,7 @@ import {
 } from 'lucide-react';
 
 const LoginPage = () => {
+  const navigate = useNavigate();
   const [formErrors, setFormErrors] = useState({});
   const validEmailDomains = [
     'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'
@@ -92,10 +95,32 @@ const LoginPage = () => {
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Login attempt:', formData);
+
+    if (!validateForm()) return;
+
+    try {
+      const response = await axios.post('http://localhost:3000/auth/login', formData);
+
+      console.log('Login successful:', response.data);
+
+      // ✅ Save token to localStorage (adjust based on backend response structure)
+      localStorage.setItem('token', response.data.token);
+
+      toast.success('Login successful!');
+
+      // ✅ Redirect to dashboard or home
+      setTimeout(() => {
+        navigate('/chatify'); // change route as needed
+      }, 1000);
+
+    } catch (error) {
+      console.error('Login failed:', error.response?.data || error.message);
+      toast.error(error.response?.data?.message || 'Login failed');
+    }
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-green-50 relative overflow-hidden">
@@ -361,7 +386,10 @@ const LoginPage = () => {
                 {/* Login Button */}
                 <motion.button
                   type="submit"
-                  className="group w-full bg-green-600 text-white py-4 px-6 rounded-xl font-bold text-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-300 shadow-lg hover:shadow-xl"
+                  onClick={handleSubmit}
+                  className="group w-full bg-green-600 text-white py-4 px-6 rounded-xl font-bold text-lg 
+             hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 
+             focus:ring-offset-2 transition-all duration-300 shadow-lg hover:shadow-xl"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   initial={{ y: 20, opacity: 0 }}
@@ -379,6 +407,7 @@ const LoginPage = () => {
                     </motion.div>
                   </div>
                 </motion.button>
+
 
                 {/* Social Login */}
                 <motion.div
@@ -432,7 +461,7 @@ const LoginPage = () => {
                 <p className="text-gray-600">
                   Don't have an account?{' '}
                   <a
-                    href="/auth/register"
+                    href="/register"
                     className="font-bold text-green-600 hover:text-green-500 transition-colors"
                   >
                     Sign up for free
