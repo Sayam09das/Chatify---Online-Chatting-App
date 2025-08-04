@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import axios from 'axios';
+import io from 'socket.io-client';
+import { v4 as uuidv4 } from 'uuid';
 import {
     MessageCircle,
     Phone,
@@ -16,7 +17,7 @@ import {
     Image,
     FileText,
     MapPin,
-    User,
+    UserPlus,
     Users,
     Settings,
     Archive,
@@ -44,89 +45,208 @@ import {
     Minimize2
 } from 'lucide-react';
 
+const socket = io("http://localhost:3000", {
+    withCredentials: true,
+    transports: ["websocket"],
+});
+
 const ChatifyWhatsApp = () => {
+    const [chats, setChats] = useState([]);
+    const [currentUser, setCurrentUser] = useState(null);
+    const [searchResults, setSearchResults] = useState([]);
+    const [allUsers, setAllUsers] = useState([]);
     const [activeChat, setActiveChat] = useState(null);
     const [message, setMessage] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showAttachMenu, setShowAttachMenu] = useState(false);
     const [showChatMenu, setShowChatMenu] = useState(false);
-    const [showSidebar, setShowSidebar] = useState(false);
+    const [showSidebar, setShowSidebar] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
     const [isVideoCall, setIsVideoCall] = useState(false);
     const [isAudioCall, setIsAudioCall] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+    const [notifications, setNotifications] = useState([]);
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
 
-    // Sample chats data
-    const [chats, setChats] = useState([
-        {
-            id: 1,
-            name: 'John Doe',
-            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
-            lastMessage: 'Hey, how are you doing?',
-            time: '10:30 AM',
-            unread: 2,
-            online: true,
-            typing: false,
-            messages: [
-                { id: 1, text: 'Hey there!', time: '10:25 AM', sender: 'them', status: 'read' },
-                { id: 2, text: 'How are you doing today?', time: '10:26 AM', sender: 'them', status: 'read' },
-                { id: 3, text: 'I\'m doing great! Thanks for asking', time: '10:28 AM', sender: 'me', status: 'delivered' },
-                { id: 4, text: 'What about you?', time: '10:29 AM', sender: 'me', status: 'delivered' },
-                { id: 5, text: 'Hey, how are you doing?', time: '10:30 AM', sender: 'them', status: 'read' }
-            ]
-        },
-        {
-            id: 2,
-            name: 'Work Team',
-            avatar: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=150&h=150&fit=crop&crop=face',
-            lastMessage: 'Sarah: The project is ready',
-            time: '9:45 AM',
-            unread: 5,
-            online: false,
-            typing: false,
-            isGroup: true,
-            messages: [
-                { id: 1, text: 'Good morning everyone!', time: '9:00 AM', sender: 'them', status: 'read', senderName: 'Mike' },
-                { id: 2, text: 'Morning! Ready for the presentation?', time: '9:15 AM', sender: 'them', status: 'read', senderName: 'Sarah' },
-                { id: 3, text: 'Yes, everything is prepared', time: '9:20 AM', sender: 'me', status: 'read' },
-                { id: 4, text: 'The project is ready', time: '9:45 AM', sender: 'them', status: 'delivered', senderName: 'Sarah' }
-            ]
-        },
-        {
-            id: 3,
-            name: 'Mom',
-            avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face',
-            lastMessage: 'Don\'t forget dinner tonight',
-            time: 'Yesterday',
-            unread: 0,
-            online: false,
-            typing: false,
-            messages: [
-                { id: 1, text: 'Hi honey, how was work today?', time: '6:00 PM', sender: 'them', status: 'read' },
-                { id: 2, text: 'It was good mom, thanks!', time: '6:15 PM', sender: 'me', status: 'read' },
-                { id: 3, text: 'Don\'t forget dinner tonight', time: '7:30 PM', sender: 'them', status: 'read' }
-            ]
-        },
-        {
-            id: 4,
-            name: 'Alex Johnson',
-            avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-            lastMessage: 'Sounds good!',
-            time: 'Tuesday',
-            unread: 0,
-            online: false,
-            typing: false,
-            messages: [
-                { id: 1, text: 'Want to grab coffee tomorrow?', time: '2:00 PM', sender: 'me', status: 'read' },
-                { id: 2, text: 'Sounds good!', time: '2:05 PM', sender: 'them', status: 'read' }
-            ]
+    const handleLogout = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            const response = await fetch("http://localhost:3000/auth/logout", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                credentials: "include",
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showNotification("Logged out successfully", "success");
+                localStorage.removeItem("token");
+                localStorage.removeItem("user");
+                window.location.href = "/login";
+            } else {
+                showNotification(data.message || "Logout failed", "error");
+            }
+        } catch (err) {
+            console.error(err);
+            showNotification("Server error during logout", "error");
         }
-    ]);
+    };
+
+    // Alternative method to get current user if localStorage fails
+    const getCurrentUserFromToken = async (token) => {
+        try {
+            const response = await axios.get('http://localhost:3000/auth/me', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+            return response.data;
+        } catch (error) {
+            console.error('Failed to get user from token:', error);
+            return null;
+        }
+    };
+
+    useEffect(() => {
+        const storedUser = localStorage.getItem('user');
+        const storedToken = localStorage.getItem('token');
+
+        console.log('🔍 Checking localStorage:', { storedUser, storedToken });
+
+        if (!storedToken) {
+            console.warn('Token not found in localStorage');
+            showNotification('Please login again', 'error');
+            return;
+        }
+
+        const initializeUser = async () => {
+            let currentUserParsed = null;
+
+            // Try to get user from localStorage first
+            if (storedUser) {
+                try {
+                    currentUserParsed = JSON.parse(storedUser);
+                    console.log('👤 Parsed user from localStorage:', currentUserParsed);
+                } catch (error) {
+                    console.error('Error parsing user from localStorage:', error);
+                }
+            }
+
+            // If localStorage user is invalid, fetch from server
+            if (!currentUserParsed || !currentUserParsed._id) {
+                console.log('🔄 Fetching user from server...');
+                currentUserParsed = await getCurrentUserFromToken(storedToken);
+
+                if (currentUserParsed) {
+                    // Update localStorage with fresh user data
+                    localStorage.setItem('user', JSON.stringify(currentUserParsed));
+                    console.log('✅ User data refreshed from server');
+                } else {
+                    console.error('Failed to get user data from server');
+                    showNotification('Failed to authenticate. Please login again', 'error');
+                    return;
+                }
+            }
+
+            if (!currentUserParsed || !currentUserParsed._id) {
+                console.error('Invalid user data:', currentUserParsed);
+                showNotification('Invalid user data. Please login again', 'error');
+                return;
+            }
+
+            setCurrentUser(currentUserParsed);
+
+            // Emit addUser with proper ID
+            socket.emit('addUser', currentUserParsed._id);
+            console.log("🟢 Emitting addUser:", currentUserParsed._id);
+
+            const fetchUsers = async () => {
+                try {
+                    const res = await axios.post(
+                        'http://localhost:3000/auth/users',
+                        {},
+                        {
+                            headers: {
+                                Authorization: `Bearer ${storedToken}`,
+                            },
+                        }
+                    );
+
+                    const others = res.data.filter(user => user._id !== currentUserParsed._id);
+                    const sortedOthers = others.sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+                    // ✅ Don't include current user in the chat list - only show other users
+                    setAllUsers(res.data); // Keep all users for search/reference
+
+                    // ✅ Create chats only for OTHER users, not including yourself
+                    const chatsData = sortedOthers.map(user => ({
+                        _id: user._id,
+                        name: user.fullName,
+                        avatar: user.profileImage
+                            ? `http://localhost:3000/${user.profileImage.replace(/\\/g, '/')}`
+                            : '/default-avatar.png',
+                        lastMessage: '',
+                        unread: 0,
+                        typing: false,
+                        online: false,
+                        time: '',
+                        messages: [],
+                    }));
+
+                    setChats(chatsData);
+                    console.log('✅ Users and chats loaded successfully');
+                } catch (err) {
+                    console.error('Failed to fetch users:', err);
+                    showNotification('Failed to load users', 'error');
+                }
+            };
+
+            fetchUsers();
+        };
+
+        initializeUser();
+    }, []);
+
+    const handleStartChat = (user) => {
+        // ✅ Prevent starting chat with yourself
+        if (user._id === currentUser?._id) {
+            showNotification("You can't chat with yourself!", 'error');
+            return;
+        }
+
+        const chatExists = chats.find(chat => chat._id === user._id);
+
+        if (chatExists) {
+            setActiveChat(chatExists);
+            setShowSidebar(false);
+        } else {
+            const newChat = {
+                _id: user._id,
+                name: user.fullName,
+                avatar: user.profileImage
+                    ? `http://localhost:3000/${user.profileImage.replace(/\\/g, '/')}`
+                    : '/default-avatar.png',
+                lastMessage: '',
+                unread: 0,
+                typing: false,
+                online: false,
+                time: '',
+                messages: [],
+            };
+
+            setChats(prevChats => [newChat, ...prevChats]);
+            setActiveChat(newChat);
+            setShowSidebar(false);
+        }
+    };
 
     const emojis = ['😀', '😂', '😍', '🥺', '😭', '😡', '👍', '👎', '❤️', '🔥', '💯', '😎'];
 
@@ -136,8 +256,18 @@ const ChatifyWhatsApp = () => {
         { icon: Image, label: 'Gallery', color: 'text-purple-500' },
         { icon: Mic, label: 'Audio', color: 'text-red-500' },
         { icon: MapPin, label: 'Location', color: 'text-orange-500' },
-        { icon: User, label: 'Contact', color: 'text-indigo-500' }
+        { icon: UserPlus, label: 'Contact', color: 'text-indigo-500' }
     ];
+
+    const showNotification = (message, type = 'success') => {
+        const id = Date.now();
+        const notification = { id, message, type };
+        setNotifications(prev => [...prev, notification]);
+
+        setTimeout(() => {
+            setNotifications(prev => prev.filter(n => n.id !== id));
+        }, 3000);
+    };
 
     useEffect(() => {
         scrollToBottom();
@@ -165,41 +295,166 @@ const ChatifyWhatsApp = () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const handleSendMessage = () => {
-        if (message.trim() && activeChat) {
-            const newMessage = {
-                id: Date.now(),
-                text: message,
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                sender: 'me',
-                status: 'sent'
-            };
+    const handleSearch = async (query) => {
+        if (!query.trim()) return;
+        try {
+            const res = await axios.get(`http://localhost:3000/api/search?search=${query}`);
+            setSearchResults(res.data);
+        } catch (error) {
+            console.error('Search error:', error);
+        }
+    };
 
-            setChats(prevChats =>
-                prevChats.map(chat =>
-                    chat.id === activeChat.id
+    const handleProfileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('profileImage', file);
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await axios.put('http://localhost:3000/auth/update-profile-image', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            const updatedUser = response.data.user;
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+            setCurrentUser(updatedUser);
+            showNotification('Profile image updated!', 'success');
+        } catch (error) {
+            console.error('Profile update failed:', error);
+            showNotification('Failed to update profile image', 'error');
+        }
+    };
+
+    // Handle Receiving Messages
+    const handleReceiveMessage = ({ chatId, message }) => {
+        console.log("📨 Received message:", { chatId, message });
+
+        setChats(prevChats => {
+            const chatExists = prevChats.find(chat => chat._id === chatId);
+
+            if (chatExists) {
+                return prevChats.map(chat =>
+                    chat._id === chatId
                         ? {
                             ...chat,
-                            messages: [...chat.messages, newMessage],
-                            lastMessage: message,
+                            messages: [...chat.messages, message],
+                            lastMessage: message.text,
                             time: 'now'
                         }
                         : chat
-                )
-            );
+                );
+            } else {
+                // New chat creation
+                const newChat = {
+                    _id: chatId,
+                    name: 'New User',
+                    avatar: '/default-avatar.png',
+                    messages: [message],
+                    lastMessage: message.text,
+                    time: 'now',
+                    unread: 1
+                };
+                return [newChat, ...prevChats];
+            }
+        });
+    };
 
-            setMessage('');
-            toast.success('Message sent!');
+    // Register socket listener
+    useEffect(() => {
+        socket.on('receiveMessage', handleReceiveMessage);
+
+        // Handle socket connection events
+        socket.on('connect', () => {
+            console.log('🔌 Socket connected:', socket.id);
+        });
+
+        socket.on('disconnect', () => {
+            console.log('❌ Socket disconnected');
+        });
+
+        return () => {
+            socket.off('receiveMessage', handleReceiveMessage);
+            socket.off('connect');
+            socket.off('disconnect');
+        };
+    }, []);
+
+    // Handle Sending Messages - FIXED VERSION
+    const handleSendMessage = () => {
+        const trimmed = message.trim();
+
+        // Enhanced validation with detailed logging
+        if (!trimmed) {
+            console.warn('Cannot send message: empty message');
+            return;
         }
+
+        if (!activeChat) {
+            console.warn('Cannot send message: no active chat');
+            return;
+        }
+
+        if (!currentUser || !currentUser._id) {
+            console.error('Cannot send message: currentUser or _id is missing', { currentUser });
+            showNotification('Please refresh the page and login again', 'error');
+            return;
+        }
+
+        // Create the message object with guaranteed sender ID
+        const messageObj = {
+            text: trimmed,
+            sender: currentUser._id,  // ✅ Ensure sender is included
+            receiver: activeChat._id,
+            timestamp: new Date().toISOString()
+        };
+
+        const newMessage = {
+            _id: uuidv4(),
+            ...messageObj,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'sent'
+        };
+
+        console.log('📤 Sending message:', messageObj);
+        console.log('👤 Current user:', currentUser);
+        console.log('💬 Active chat:', activeChat);
+
+        // Update local state immediately
+        setChats(prevChats =>
+            prevChats.map(chat =>
+                chat._id === activeChat._id
+                    ? {
+                        ...chat,
+                        messages: [...chat.messages, newMessage],
+                        lastMessage: trimmed,
+                        time: 'now'
+                    }
+                    : chat
+            )
+        );
+
+        // ✅ Send to socket server with proper structure
+        socket.emit('sendMessage', {
+            chatId: activeChat._id,
+            message: messageObj  // Send the complete message object
+        });
+
+        setMessage('');
     };
 
     const handleStartCall = (type) => {
         if (type === 'video') {
             setIsVideoCall(true);
-            toast.success('Starting video call...');
+            showNotification('Starting video call...');
         } else {
             setIsAudioCall(true);
-            toast.success('Starting audio call...');
+            showNotification('Starting audio call...');
         }
     };
 
@@ -208,36 +463,70 @@ const ChatifyWhatsApp = () => {
         setIsAudioCall(false);
         setIsMuted(false);
         setIsVideoEnabled(true);
-        toast.info('Call ended');
+        showNotification('Call ended', 'info');
     };
 
     const handleFileUpload = (type) => {
         setShowAttachMenu(false);
-        toast.success(`${type} attachment added`);
+        showNotification(`${type} attachment added`);
     };
 
     const startRecording = () => {
         setIsRecording(true);
-        toast.info('Recording started');
+        showNotification('Recording started', 'info');
     };
 
     const stopRecording = () => {
         setIsRecording(false);
         if (recordingTime > 0) {
-            toast.success('Voice message sent!');
+            showNotification('Voice message sent!');
         }
     };
 
     const filteredChats = chats.filter(chat =>
-        chat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
+        (chat.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (chat.lastMessage || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const activeMessages = activeChat ? chats.find(c => c.id === activeChat.id)?.messages || [] : [];
+    const activeMessages = activeChat
+        ? chats.find(c => c._id === activeChat._id)?.messages || []
+        : [];
+
+    const filteredUsers = allUsers.filter(user =>
+        user._id !== currentUser?._id && // ✅ Don't show current user in results
+        user.fullName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     return (
-        <div className="h-screen bg-gray-100 flex overflow-hidden">
-            <ToastContainer position="top-right" />
+        <div className="h-screen bg-gray-100 flex overflow-hidden relative">
+            {/* Debug Info (Remove in production) */}
+            {process.env.NODE_ENV === 'development' && (
+                <div className="fixed top-4 left-4 z-50 bg-black text-white p-2 rounded text-xs max-w-xs">
+                    <div>User ID: {currentUser?._id || 'undefined'}</div>
+                    <div>User Name: {currentUser?.fullName || 'undefined'}</div>
+                    <div>Socket Connected: {socket.connected ? 'Yes' : 'No'}</div>
+                </div>
+            )}
+
+            {/* Notification Container */}
+            <div className="fixed top-4 right-4 z-50 space-y-2">
+                <AnimatePresence>
+                    {notifications.map((notification) => (
+                        <motion.div
+                            key={notification.id}
+                            initial={{ opacity: 0, x: 300 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 300 }}
+                            className={`px-4 py-2 rounded-lg shadow-lg text-white ${notification.type === 'success' ? 'bg-green-500' :
+                                notification.type === 'error' ? 'bg-red-500' :
+                                    'bg-blue-500'
+                                }`}
+                        >
+                            {notification.message}
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+            </div>
 
             {/* Sidebar */}
             <div className={`${showSidebar ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:relative z-30 w-80 bg-white border-r border-gray-200 transition-transform duration-300`}>
@@ -245,20 +534,38 @@ const ChatifyWhatsApp = () => {
                 <div className="bg-green-600 text-white p-4">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center space-x-3">
-                            <img
-                                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=40&h=40&fit=crop&crop=face"
-                                alt="Profile"
-                                className="w-10 h-10 rounded-full"
-                            />
-                            <h1 className="text-xl font-bold">Chatify</h1>
+                            <div className="relative group cursor-pointer">
+                                <img
+                                    src={
+                                        currentUser?.profileImage
+                                            ? `http://localhost:3000${currentUser.profileImage}`
+                                            : '/default-avatar.png'
+                                    }
+                                    alt="Profile"
+                                    className="w-10 h-10 rounded-full object-cover border-2 border-white transition-transform group-hover:scale-105"
+                                    onClick={() => document.getElementById('profileUploadInput').click()}
+                                />
+                                <input
+                                    id="profileUploadInput"
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={handleProfileChange}
+                                />
+                                <div className="absolute bottom-0 right-0 bg-white rounded-full p-1 hidden group-hover:block">
+                                    <Camera className="w-4 h-4 text-gray-800" />
+                                </div>
+                            </div>
+                            <h1 className="text-xl font-bold">{currentUser?.fullName || 'Chatify'}</h1>
                         </div>
                         <div className="flex items-center space-x-2">
                             <motion.button
                                 whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
                                 className="p-2 hover:bg-green-700 rounded-full"
+                                onClick={() => showNotification('New contact feature coming soon!', 'info')}
                             >
-                                <Users className="w-5 h-5" />
+                                <UserPlus className="w-5 h-5" />
                             </motion.button>
                             <motion.button
                                 whileHover={{ scale: 1.1 }}
@@ -271,7 +578,6 @@ const ChatifyWhatsApp = () => {
                         </div>
                     </div>
 
-                    {/* Search */}
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
@@ -279,6 +585,11 @@ const ChatifyWhatsApp = () => {
                             placeholder="Search or start new chat"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleSearch(searchQuery);
+                                }
+                            }}
                             className="w-full pl-10 pr-4 py-2 bg-white/20 border border-white/30 rounded-lg text-white placeholder-white/70 focus:outline-none focus:bg-white/30"
                         />
                     </div>
@@ -286,22 +597,71 @@ const ChatifyWhatsApp = () => {
 
                 {/* Chat List */}
                 <div className="flex-1 overflow-y-auto">
+                    {/* Show available users to chat with if no search results */}
+                    {searchQuery && (
+                        <div className="border-b border-gray-200 bg-gray-50">
+                            <div className="px-4 py-2 text-sm font-medium text-gray-700">
+                                Available Users
+                            </div>
+                            {allUsers
+                                .filter(user =>
+                                    user._id !== currentUser?._id && // Don't show current user
+                                    user.fullName.toLowerCase().includes(searchQuery.toLowerCase())
+                                )
+                                .map((user) => (
+                                    <motion.div
+                                        key={user._id}
+                                        whileHover={{ scale: 1.01 }}
+                                        onClick={() => handleStartChat(user)}
+                                        className="flex items-center p-3 cursor-pointer hover:bg-gray-100 border-b border-gray-100"
+                                    >
+                                        <img
+                                            src={
+                                                user.profileImage
+                                                    ? `http://localhost:3000/${user.profileImage.replace(/\\/g, '/')}`
+                                                    : '/default-avatar.png'
+                                            }
+                                            alt={user.fullName}
+                                            className="w-10 h-10 rounded-full object-cover mr-3"
+                                        />
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-gray-900">
+                                                {user.fullName}
+                                            </h3>
+                                            <p className="text-xs text-gray-500">@{user.username}</p>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                        </div>
+                    )}
+
+                    {/* Existing Chats */}
+                    {filteredChats.length > 0 && (
+                        <div className="border-b border-gray-200 bg-gray-50">
+                            <div className="px-4 py-2 text-sm font-medium text-gray-700">
+                                Conversations
+                            </div>
+                        </div>
+                    )}
+
                     {filteredChats.map((chat) => (
                         <motion.div
-                            key={chat.id}
-                            whileHover={{ backgroundColor: '#f3f4f6' }}
+                            key={chat._id}
+                            whileHover={{ scale: 1.01 }}
                             onClick={() => {
                                 setActiveChat(chat);
                                 setShowSidebar(false);
                             }}
-                            className={`flex items-center p-4 cursor-pointer border-b border-gray-100 ${activeChat?.id === chat.id ? 'bg-green-50 border-r-4 border-r-green-500' : ''
+                            className={`flex items-center p-4 cursor-pointer border-b border-gray-100 transition-all duration-150 hover:bg-gray-100 rounded-md ${activeChat?._id === chat._id
+                                ? 'bg-green-50 border-r-4 border-green-500'
+                                : ''
                                 }`}
                         >
                             <div className="relative mr-3">
                                 <img
-                                    src={chat.avatar}
+                                    src={chat.avatar || '/default-avatar.png'}
                                     alt={chat.name}
-                                    className="w-12 h-12 rounded-full"
+                                    className="w-12 h-12 rounded-full object-cover"
                                 />
                                 {chat.online && (
                                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
@@ -313,18 +673,22 @@ const ChatifyWhatsApp = () => {
                                     <h3 className="text-sm font-semibold text-gray-900 truncate">
                                         {chat.name}
                                     </h3>
-                                    <span className="text-xs text-gray-500">{chat.time}</span>
+                                    <span className="text-xs text-gray-500">{chat.time || ''}</span>
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <p className="text-sm text-gray-600 truncate">
+
+                                <div className="flex items-center justify-between mt-1">
+                                    <p className="text-sm text-gray-600 truncate max-w-[200px]">
                                         {chat.typing ? (
-                                            <span className="text-green-600 font-medium">typing...</span>
+                                            <span className="text-green-600 font-medium animate-pulse">
+                                                typing...
+                                            </span>
                                         ) : (
-                                            chat.lastMessage
+                                            chat.lastMessage || 'Start a conversation'
                                         )}
                                     </p>
+
                                     {chat.unread > 0 && (
-                                        <span className="bg-green-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] text-center">
+                                        <span className="bg-green-500 text-white text-xs font-medium rounded-full px-2 py-0.5 min-w-[20px] text-center ml-2">
                                             {chat.unread}
                                         </span>
                                     )}
@@ -332,6 +696,15 @@ const ChatifyWhatsApp = () => {
                             </div>
                         </motion.div>
                     ))}
+
+                    {/* No chats message */}
+                    {filteredChats.length === 0 && !searchQuery && (
+                        <div className="p-8 text-center text-gray-500">
+                            <Users className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                            <p className="text-sm">No conversations yet</p>
+                            <p className="text-xs mt-2">Search for users above to start chatting</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Chat Menu Dropdown */}
@@ -348,7 +721,7 @@ const ChatifyWhatsApp = () => {
                                 { icon: Star, label: 'Starred Messages' },
                                 { icon: Settings, label: 'Settings' },
                                 { icon: Archive, label: 'Archived Chats' },
-                                { icon: LogOut, label: 'Log Out' }
+                                { icon: LogOut, label: 'Log Out', logout: true }
                             ].map((item, index) => (
                                 <motion.button
                                     key={index}
@@ -356,7 +729,11 @@ const ChatifyWhatsApp = () => {
                                     className="flex items-center space-x-3 w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100"
                                     onClick={() => {
                                         setShowChatMenu(false);
-                                        toast.info(`${item.label} clicked`);
+                                        if (item.logout) {
+                                            handleLogout();
+                                        } else {
+                                            showNotification(`${item.label} clicked`, 'info');
+                                        }
                                     }}
                                 >
                                     <item.icon className="w-5 h-5" />
@@ -422,6 +799,7 @@ const ChatifyWhatsApp = () => {
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.9 }}
                                     className="p-2 hover:bg-gray-100 rounded-full"
+                                    onClick={() => showNotification('Search in chat coming soon!', 'info')}
                                 >
                                     <Search className="w-5 h-5" />
                                 </motion.button>
@@ -429,6 +807,7 @@ const ChatifyWhatsApp = () => {
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.9 }}
                                     className="p-2 hover:bg-gray-100 rounded-full"
+                                    onClick={() => showNotification('Chat options coming soon!', 'info')}
                                 >
                                     <MoreVertical className="w-5 h-5" />
                                 </motion.button>
@@ -443,27 +822,27 @@ const ChatifyWhatsApp = () => {
                                 backgroundColor: '#f0f2f5'
                             }}
                         >
-                            {activeMessages.map((msg) => (
+                            {activeMessages.map((msg, index) => (
                                 <motion.div
-                                    key={msg.id}
+                                    key={msg._id || index}
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}
+                                    className={`flex ${msg.sender === currentUser?._id ? 'justify-end' : 'justify-start'}`}
                                 >
                                     <div
-                                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${msg.sender === 'me'
-                                                ? 'bg-green-500 text-white rounded-br-none'
-                                                : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
+                                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${msg.sender === currentUser?._id
+                                            ? 'bg-green-500 text-white rounded-br-none'
+                                            : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
                                             }`}
                                     >
                                         {msg.senderName && (
                                             <p className="text-xs font-semibold text-green-600 mb-1">{msg.senderName}</p>
                                         )}
                                         <p className="text-sm">{msg.text}</p>
-                                        <div className={`flex items-center justify-end space-x-1 mt-1 ${msg.sender === 'me' ? 'text-white/70' : 'text-gray-500'
+                                        <div className={`flex items-center justify-end space-x-1 mt-1 ${msg.sender === currentUser?._id ? 'text-white/70' : 'text-gray-500'
                                             }`}>
                                             <span className="text-xs">{msg.time}</span>
-                                            {msg.sender === 'me' && (
+                                            {msg.sender === currentUser?._id && (
                                                 <div className="flex">
                                                     {msg.status === 'sent' && <Check className="w-3 h-3" />}
                                                     {msg.status === 'delivered' && <CheckCheck className="w-3 h-3" />}
@@ -559,7 +938,12 @@ const ChatifyWhatsApp = () => {
                                         type="text"
                                         value={message}
                                         onChange={(e) => setMessage(e.target.value)}
-                                        onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                handleSendMessage();
+                                            }
+                                        }}
                                         placeholder="Type a message..."
                                         className="w-full px-4 py-3 bg-gray-50 rounded-full border border-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                                     />
@@ -714,6 +1098,7 @@ const ChatifyWhatsApp = () => {
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.9 }}
                                     className="p-4 rounded-full bg-gray-600 text-white"
+                                    onClick={() => showNotification('Fullscreen mode', 'info')}
                                 >
                                     <Maximize2 className="w-6 h-6" />
                                 </motion.button>
@@ -791,6 +1176,7 @@ const ChatifyWhatsApp = () => {
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.9 }}
                                     className="p-6 rounded-full bg-white/20 backdrop-blur-sm"
+                                    onClick={() => showNotification('Add participant feature coming soon!', 'info')}
                                 >
                                     <Plus className="w-8 h-8" />
                                 </motion.button>
@@ -827,330 +1213,13 @@ const ChatifyWhatsApp = () => {
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
             >
-                <button className="w-14 h-14 bg-green-500 text-white rounded-full shadow-lg flex items-center justify-center">
+                <button
+                    className="w-14 h-14 bg-green-500 text-white rounded-full shadow-lg flex items-center justify-center"
+                    onClick={() => showNotification('New chat feature coming soon!', 'info')}
+                >
                     <MessageCircle className="w-6 h-6" />
                 </button>
             </motion.div>
-
-            {/* Status Bar (Mobile) */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 h-6 bg-green-600 z-40" />
-
-            {/* Custom Styles for WhatsApp-like scrollbar */}
-            <style jsx>{`
-        .overflow-y-auto::-webkit-scrollbar {
-          width: 6px;
-        }
-        .overflow-y-auto::-webkit-scrollbar-track {
-          background: #f1f1f1;
-        }
-        .overflow-y-auto::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 10px;
-        }
-        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-          background: #a8a8a8;
-        }
-      `}</style>
-
-            {/* Message Context Menu */}
-            <AnimatePresence>
-                {/* This would be triggered by right-clicking on messages */}
-            </AnimatePresence>
-
-            {/* Profile Modal */}
-            <AnimatePresence>
-                {/* This would show user profile when clicking on avatar */}
-            </AnimatePresence>
-
-            {/* Settings Modal */}
-            <AnimatePresence>
-                {/* This would show app settings */}
-            </AnimatePresence>
-
-            {/* Group Info Modal */}
-            <AnimatePresence>
-                {/* This would show group information for group chats */}
-            </AnimatePresence>
-
-            {/* Media Viewer Modal */}
-            <AnimatePresence>
-                {/* This would show full-screen media viewer */}
-            </AnimatePresence>
-
-            {/* Voice Message Player */}
-            <AnimatePresence>
-                {/* This would show voice message controls */}
-            </AnimatePresence>
-
-            {/* Document Viewer Modal */}
-            <AnimatePresence>
-                {/* This would show document preview */}
-            </AnimatePresence>
-
-            {/* Location Sharing Modal */}
-            <AnimatePresence>
-                {/* This would show location picker */}
-            </AnimatePresence>
-
-            {/* Contact Sharing Modal */}
-            <AnimatePresence>
-                {/* This would show contact picker */}
-            </AnimatePresence>
-
-            {/* Message Search Results */}
-            <AnimatePresence>
-                {/* This would show search results overlay */}
-            </AnimatePresence>
-
-            {/* New Group Creation Modal */}
-            <AnimatePresence>
-                {/* This would show group creation flow */}
-            </AnimatePresence>
-
-            {/* Broadcast List Modal */}
-            <AnimatePresence>
-                {/* This would show broadcast list creation */}
-            </AnimatePresence>
-
-            {/* Archived Chats Modal */}
-            <AnimatePresence>
-                {/* This would show archived conversations */}
-            </AnimatePresence>
-
-            {/* Starred Messages Modal */}
-            <AnimatePresence>
-                {/* This would show starred messages */}
-            </AnimatePresence>
-
-            {/* Loading States */}
-            <AnimatePresence>
-                {/* Loading spinners for various operations */}
-            </AnimatePresence>
-
-            {/* Network Status Indicator */}
-            <AnimatePresence>
-                {/* Connection status indicator */}
-            </AnimatePresence>
-
-            {/* Message Status Indicators */}
-            <AnimatePresence>
-                {/* Message delivery status updates */}
-            </AnimatePresence>
-
-            {/* Typing Indicators */}
-            <AnimatePresence>
-                {/* Real-time typing indicators */}
-            </AnimatePresence>
-
-            {/* Push Notification Permission Request */}
-            <AnimatePresence>
-                {/* Notification permission modal */}
-            </AnimatePresence>
-
-            {/* App Update Available Modal */}
-            <AnimatePresence>
-                {/* Update notification modal */}
-            </AnimatePresence>
-
-            {/* Error Boundaries and Fallbacks */}
-            <AnimatePresence>
-                {/* Error state displays */}
-            </AnimatePresence>
-
-            {/* Accessibility Features */}
-            <div className="sr-only">
-                {/* Screen reader announcements */}
-                <div role="status" aria-live="polite" aria-atomic="true">
-                    {/* Dynamic status updates for screen readers */}
-                </div>
-            </div>
-
-            {/* Analytics and Tracking */}
-            {/* Event tracking for user interactions */}
-
-            {/* Service Worker Registration */}
-            {/* PWA functionality */}
-
-            {/* WebRTC Configuration */}
-            {/* Real-time communication setup */}
-
-            {/* Socket.IO Connection */}
-            {/* Real-time messaging connection */}
-
-            {/* File Upload Progress */}
-            <AnimatePresence>
-                {/* File upload progress indicators */}
-            </AnimatePresence>
-
-            {/* Message Encryption Indicator */}
-            <AnimatePresence>
-                {/* End-to-end encryption status */}
-            </AnimatePresence>
-
-            {/* Dark Mode Toggle */}
-            <AnimatePresence>
-                {/* Theme switching functionality */}
-            </AnimatePresence>
-
-            {/* Language Selector */}
-            <AnimatePresence>
-                {/* Multi-language support */}
-            </AnimatePresence>
-
-            {/* Backup and Restore */}
-            <AnimatePresence>
-                {/* Data backup/restore modals */}
-            </AnimatePresence>
-
-            {/* Privacy Settings */}
-            <AnimatePresence>
-                {/* Privacy configuration modals */}
-            </AnimatePresence>
-
-            {/* Block/Unblock User */}
-            <AnimatePresence>
-                {/* User blocking functionality */}
-            </AnimatePresence>
-
-            {/* Report User/Content */}
-            <AnimatePresence>
-                {/* Reporting system modals */}
-            </AnimatePresence>
-
-            {/* Custom Ringtones */}
-            <AnimatePresence>
-                {/* Ringtone selection modals */}
-            </AnimatePresence>
-
-            {/* Font Size Settings */}
-            <AnimatePresence>
-                {/* Typography customization */}
-            </AnimatePresence>
-
-            {/* Chat Wallpaper Selector */}
-            <AnimatePresence>
-                {/* Background customization */}
-            </AnimatePresence>
-
-            {/* Auto-download Settings */}
-            <AnimatePresence>
-                {/* Media download preferences */}
-            </AnimatePresence>
-
-            {/* Storage Usage Display */}
-            <AnimatePresence>
-                {/* Storage management interface */}
-            </AnimatePresence>
-
-            {/* Message Forwarding Interface */}
-            <AnimatePresence>
-                {/* Message forwarding modals */}
-            </AnimatePresence>
-
-            {/* Quick Replies */}
-            <AnimatePresence>
-                {/* Pre-defined message responses */}
-            </AnimatePresence>
-
-            {/* Message Scheduling */}
-            <AnimatePresence>
-                {/* Scheduled message functionality */}
-            </AnimatePresence>
-
-            {/* Multi-device Sync Status */}
-            <AnimatePresence>
-                {/* Cross-device synchronization indicators */}
-            </AnimatePresence>
-
-            {/* Call History */}
-            <AnimatePresence>
-                {/* Call log interface */}
-            </AnimatePresence>
-
-            {/* Status Updates (Stories) */}
-            <AnimatePresence>
-                {/* WhatsApp-style status feature */}
-            </AnimatePresence>
-
-            {/* Business Features */}
-            <AnimatePresence>
-                {/* Business account functionality */}
-            </AnimatePresence>
-
-            {/* Payment Integration */}
-            <AnimatePresence>
-                {/* In-app payment system */}
-            </AnimatePresence>
-
-            {/* QR Code Scanner */}
-            <AnimatePresence>
-                {/* QR code functionality */}
-            </AnimatePresence>
-
-            {/* Live Location Sharing */}
-            <AnimatePresence>
-                {/* Real-time location sharing */}
-            </AnimatePresence>
-
-            {/* Message Reactions */}
-            <AnimatePresence>
-                {/* Emoji reactions to messages */}
-            </AnimatePresence>
-
-            {/* Polls and Surveys */}
-            <AnimatePresence>
-                {/* Interactive polling system */}
-            </AnimatePresence>
-
-            {/* Voice/Video Message Recording */}
-            <AnimatePresence>
-                {/* Enhanced media recording interface */}
-            </AnimatePresence>
-
-            {/* Chat Export */}
-            <AnimatePresence>
-                {/* Chat history export functionality */}
-            </AnimatePresence>
-
-            {/* Two-Factor Authentication */}
-            <AnimatePresence>
-                {/* Security enhancement modals */}
-            </AnimatePresence>
-
-            {/* Admin Controls (Groups) */}
-            <AnimatePresence>
-                {/* Group administration interface */}
-            </AnimatePresence>
-
-            {/* Message Translation */}
-            <AnimatePresence>
-                {/* Auto-translation features */}
-            </AnimatePresence>
-
-            {/* Smart Suggestions */}
-            <AnimatePresence>
-                {/* AI-powered message suggestions */}
-            </AnimatePresence>
-
-            {/* Productivity Integrations */}
-            <AnimatePresence>
-                {/* Third-party app integrations */}
-            </AnimatePresence>
-
-            {/* Advanced Search Filters */}
-            <AnimatePresence>
-                {/* Enhanced search functionality */}
-            </AnimatePresence>
-
-            {/* Message Templates */}
-            <AnimatePresence>
-                {/* Pre-saved message templates */}
-            </AnimatePresence>
-
-            {/* Conversation Analytics */}
-            <AnimatePresence>
-                {/* Chat statistics and insights */}
-            </AnimatePresence>
         </div>
     );
 };

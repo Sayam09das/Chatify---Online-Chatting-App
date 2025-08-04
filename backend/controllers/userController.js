@@ -118,12 +118,14 @@ exports.loginUser = [
 
             res.status(200).json({
                 message: `Login successful`,
+                token, // ✅ ADD THIS
                 user: {
                     email: user.email,
                     fullName: user.fullName,
                     id: user._id
                 }
             });
+
 
         } catch (err) {
             console.error(err);
@@ -304,3 +306,13 @@ exports.resetPassword = [
 ];
 
 
+// ===== GET ALL USERS =====
+exports.getAllUsers = async (req, res) => {
+    try {
+        const users = await User.find().select('-password -otp -otpExpires -resetVerified'); // remove sensitive fields
+        res.status(200).json(users);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Server error' });
+    }
+};

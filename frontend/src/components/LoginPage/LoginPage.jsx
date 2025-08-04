@@ -105,14 +105,22 @@ const LoginPage = () => {
 
       console.log('Login successful:', response.data);
 
-      // ✅ Save token to localStorage (adjust based on backend response structure)
-      localStorage.setItem('token', response.data.token);
+      const { token, user } = response.data;
+
+      // ✅ Save token and user to localStorage
+      if (token && user) {
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem('senderId', user._id);
+      } else {
+        console.warn('Token or user missing in response');
+      }
 
       toast.success('Login successful!');
 
-      // ✅ Redirect to dashboard or home
+      // ✅ Redirect after delay
       setTimeout(() => {
-        navigate('/chatify'); // change route as needed
+        navigate('/chatify');
       }, 1000);
 
     } catch (error) {
@@ -120,6 +128,8 @@ const LoginPage = () => {
       toast.error(error.response?.data?.message || 'Login failed');
     }
   };
+
+
 
 
   return (
