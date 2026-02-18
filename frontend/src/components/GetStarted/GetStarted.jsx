@@ -125,7 +125,7 @@ const GetStarted = () => {
             </motion.div>
 
             <motion.a
-              href="/auth/login"
+              href="/login"
               className="inline-block px-6 py-2 bg-white text-green-600 rounded-full font-semibold hover:bg-green-50 transition-all duration-300 shadow-lg"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
