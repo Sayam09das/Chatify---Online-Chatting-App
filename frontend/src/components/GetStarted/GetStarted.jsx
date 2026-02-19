@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, Users, Shield, Zap, ArrowRight, Star, Globe, Smartphone, Check, Play, ChevronDown, Video, Phone, MoreVertical, Search } from 'lucide-react';
+import { MessageCircle, Users, Shield, Zap, ArrowRight, Star, Globe, Smartphone, Check, Play, ChevronDown, Phone, Search } from 'lucide-react';
+import ScrollTriggeredCards from './ScrollTriggeredCards';
 
 const GetStarted = () => {
   const [currentTestimonial, setCurrentTestimonial] = useState(0);
@@ -71,7 +72,7 @@ const GetStarted = () => {
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
       {/* WhatsApp-style Background Pattern */}
-      <div className="fixed inset-0 opacity-5">
+      <div className="fixed inset-0 opacity-5 pointer-events-none -z-10">
         <div className="absolute inset-0" style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23059669' fill-opacity='0.1'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
         }} />
@@ -88,54 +89,6 @@ const GetStarted = () => {
       >
         <div className="w-32 h-32 bg-green-500/10 rounded-full blur-xl" />
       </motion.div>
-
-      {/* Header */}
-      <motion.header
-        className="relative z-10 bg-green-600 shadow-lg"
-        initial={{ y: -100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
-      >
-        <div className="max-w-7xl mx-auto px-4 py-4 md:px-8">
-          <div className="flex items-center justify-between">
-            <motion.div
-              className="flex items-center space-x-3"
-              whileHover={{ scale: 1.05 }}
-            >
-              <div className="relative">
-                <motion.div
-                  className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg"
-                  animate={{ rotate: [0, -10, 10, 0] }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                >
-                  <MessageCircle className="w-7 h-7 text-green-600" />
-                </motion.div>
-                <motion.div
-                  className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-white flex items-center justify-center"
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <span className="text-white text-xs font-bold">5</span>
-                </motion.div>
-              </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white">Chatify</h1>
-                <p className="text-green-100 text-sm">Simple. Reliable. Private.</p>
-              </div>
-            </motion.div>
-
-            <motion.a
-              href="/login"
-              className="inline-block px-6 py-2 bg-white text-green-600 rounded-full font-semibold hover:bg-green-50 transition-all duration-300 shadow-lg"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Sign In
-            </motion.a>
-
-          </div>
-        </div>
-      </motion.header>
 
       <div className="relative z-10">
         {/* Hero Section */}
@@ -246,28 +199,6 @@ const GetStarted = () => {
                 >
                   <div className="relative bg-black rounded-[2.5rem] p-2 shadow-2xl shadow-black/30 w-80 h-[600px]">
                     <div className="bg-white rounded-[2rem] overflow-hidden h-full">
-                      {/* WhatsApp Header */}
-                      <div className="bg-green-600 px-4 py-4 flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <motion.div
-                            className="w-10 h-10 bg-white rounded-full flex items-center justify-center"
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                          >
-                            <MessageCircle className="w-5 h-5 text-green-600" />
-                          </motion.div>
-                          <div>
-                            <h3 className="text-white font-bold">Chatify</h3>
-                            <p className="text-green-100 text-xs">online</p>
-                          </div>
-                        </div>
-                        <div className="flex space-x-4">
-                          <Video className="w-5 h-5 text-white" />
-                          <Phone className="w-5 h-5 text-white" />
-                          <MoreVertical className="w-5 h-5 text-white" />
-                        </div>
-                      </div>
-
                       {/* Chat List */}
                       <div className="bg-white">
                         {/* Search Bar */}
@@ -431,6 +362,38 @@ const GetStarted = () => {
           </div>
         </motion.section>
 
+        {/* Scroll Animation Showcase */}
+        <motion.section
+          className="py-20 bg-white"
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+        >
+          <div className="max-w-7xl mx-auto px-4 md:px-8">
+            <div className="text-center">
+              <motion.h2
+                className="text-4xl md:text-5xl font-bold text-gray-900 mb-4"
+                initial={{ y: 40, opacity: 0 }}
+                whileInView={{ y: 0, opacity: 1 }}
+                viewport={{ once: true }}
+              >
+                Scroll to explore our <span className="text-green-600">vibrant experience</span>
+              </motion.h2>
+              <motion.p
+                className="text-lg text-gray-600 max-w-2xl mx-auto"
+                initial={{ y: 30, opacity: 0 }}
+                whileInView={{ y: 0, opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.15 }}
+              >
+                Smooth motion-driven cards bring the product personality to life as you move down the page.
+              </motion.p>
+            </div>
+
+            <ScrollTriggeredCards />
+          </div>
+        </motion.section>
+
         {/* Testimonials */}
         <motion.section
           className="py-20 bg-white"
@@ -579,20 +542,6 @@ const GetStarted = () => {
           </div>
         </motion.section>
       </div>
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 text-center">
-          <div className="flex items-center justify-center space-x-3 mb-6">
-            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
-              <MessageCircle className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-2xl font-bold">Chatify</span>
-          </div>
-          <p className="text-gray-400 mb-4">Simple. Reliable. Private.</p>
-          <p className="text-sm text-gray-500">© 2024 Chatify. All rights reserved.</p>
-        </div>
-      </footer>
     </div>
   );
 };
