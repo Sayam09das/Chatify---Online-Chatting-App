@@ -4,10 +4,11 @@ import { Navigate, useLocation, Outlet } from 'react-router-dom';
 const PublicRoute = () => {
   const location = useLocation();
   
-  // Check if user is logged in
+  // Check if user is logged in - check both localStorage items
   const user = localStorage.getItem('user');
+  const token = localStorage.getItem('token');
   
-  const isAuthenticated = !!user;
+  const isAuthenticated = !!(user && token);
 
   if (isAuthenticated) {
     // Redirect to chatify if already logged in
