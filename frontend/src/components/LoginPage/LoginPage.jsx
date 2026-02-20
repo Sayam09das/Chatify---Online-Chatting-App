@@ -74,10 +74,13 @@ const LoginPage = () => {
     if (!validateForm()) return;
     try {
       const response = await axios.post(API_ENDPOINTS.login, formData);
-      const { user } = response.data;
+      const { user, token } = response.data;
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
         localStorage.setItem('senderId', user._id);
+        if (token) {
+          localStorage.setItem('token', token);
+        }
         
         // Check if email is verified for local accounts
         if (!user.emailVerified && user.provider === 'local') {
@@ -101,10 +104,13 @@ const LoginPage = () => {
       // Send token to backend
       const response = await axios.post(API_ENDPOINTS.googleAuth, { idToken });
       
-      const { user } = response.data;
+      const { user, token } = response.data;
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
         localStorage.setItem('senderId', user._id);
+        if (token) {
+          localStorage.setItem('token', token);
+        }
       }
       
       toast.success('Google login successful!');

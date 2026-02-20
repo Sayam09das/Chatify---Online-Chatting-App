@@ -4,12 +4,11 @@ import { Navigate, useLocation, Outlet } from 'react-router-dom';
 const ProtectedRoute = () => {
   const location = useLocation();
   
-  // Check if user is logged in - check both localStorage items
+  // Check if user is logged in - only check localStorage user
+  // Backend uses HTTP-only cookies for token authentication
   const user = localStorage.getItem('user');
-  const token = localStorage.getItem('token');
   
-  // Both user and token must exist for authentication
-  const isAuthenticated = !!(user && token);
+  const isAuthenticated = !!user;
 
   if (!isAuthenticated) {
     // Redirect to login if not authenticated
