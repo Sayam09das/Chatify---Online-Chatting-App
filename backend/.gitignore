@@ -1,0 +1,89 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+*.env
+
+# Logs
+logs
+*.log
+log.txt
+
+# Build outputs
+dist/
+build/
+*.tgz
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Firebase (sensitive credentials)
+*firebase-adminsdk*
+firebase-service-account.json
+serviceAccountKey.json
+
+# AWS (sensitive)
+*.pem
+aws_credentials.json
+
+# MongoDB (local data)
+data/
+mongodb_data/
+
+# Redis (local data)
+redis_data/
+dump.rdb
+
+# Uploads
+uploads/
+media/
+*.mp3
+*.mp4
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.pdf
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cache
+.cache/
+.parcel-cache/
+
+# Swagger/OpenAPI generated files
+swagger_output.json
+api-docs.json
+
+# Socket.IO
+socket-logs/
+
+# Misc
+*.bak
+*.backup
+
