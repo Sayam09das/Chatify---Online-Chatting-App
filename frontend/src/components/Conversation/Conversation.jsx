@@ -3,11 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import io from 'socket.io-client';
 import { v4 as uuidv4 } from 'uuid';
-import Sidebar from '../Whatsapp/Sidebar';
-import ChatArea from '../Whatsapp/ChatArea';
-import VideoCall from '../Whatsapp/Viedocall';
-import Phonecall from '../Whatsapp/Phonecall';
-import API_URL, { API_ENDPOINTS } from '../../config/api';
+import Sidebar from '@/Whatsapp/Sidebar';
+import ChatArea from '@/Whatsapp/ChatArea';
+import VideoCall from '@/Whatsapp/Viedocall';
+import Phonecall from '@/Whatsapp/Phonecall';
+import API_URL, { API_ENDPOINTS } from '@/config/api';
 
 // Initialize socket connection
 const socket = io(API_URL, {
