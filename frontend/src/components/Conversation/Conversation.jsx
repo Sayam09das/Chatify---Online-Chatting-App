@@ -30,6 +30,8 @@ const Conversation = () => {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
     const [notifications, setNotifications] = useState([]);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     // Call states
     const [showVideoCall, setShowVideoCall] = useState(false);
@@ -46,10 +48,15 @@ const Conversation = () => {
     // Initialize user and fetch data
     useEffect(() => {
         const initializeUser = async () => {
+            setIsLoading(true);
+            setError(null);
+            
             const storedUser = localStorage.getItem('user');
             const storedToken = localStorage.getItem('token');
 
             if (!storedToken) {
+                setError('Please login again');
+                setIsLoading(false);
                 showNotification('Please login again', 'error');
                 return;
             }
@@ -73,6 +80,8 @@ const Conversation = () => {
                     localStorage.setItem('user', JSON.stringify(user));
                 } catch (error) {
                     console.error('Failed to get user:', error);
+                    setError('Failed to authenticate. Please login again.');
+                    setIsLoading(false);
                     showNotification('Failed to authenticate', 'error');
                     return;
                 }
@@ -110,7 +119,10 @@ const Conversation = () => {
                 setChats(chatsData);
             } catch (error) {
                 console.error('Failed to fetch users:', error);
+                // Don't block UI, just show empty chat list
             }
+            
+            setIsLoading(false);
         };
 
         initializeUser();
@@ -332,6 +344,41 @@ const Conversation = () => {
     const activeMessages = activeChat
         ? chats.find(c => c._id === activeChat._id)?.messages || []
         : [];
+
+    // Loading state
+    if (isLoading) {
+        return (
+            <div className="h-screen flex items-center justify-center" style={{ background: '#0b141a' }}>
+                <div className="text-center">
+                    <div className="w-16 h-16 border-4 border-[#25d366] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-[#8696a0]">Loading...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Error state
+    if (error) {
+        return (
+            <div className="h-screen flex items-center justify-center" style={{ background: '#0b141a' }}>
+                <div className="text-center max-w-md px-8">
+                    <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
+                    <h2 className="text-[#e9edef] text-xl font-semibold mb-2">Unable to Load</h2>
+                    <p className="text-[#8696a0] mb-4">{error}</p>
+                    <button
+                        onClick={() => window.location.href = '/login'}
+                        className="px-6 py-2 bg-[#25d366] text-[#111b21] rounded-full font-semibold hover:bg-[#20bd5a] transition-colors"
+                    >
+                        Go to Login
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-screen bg-gray-100 flex overflow-hidden relative">
