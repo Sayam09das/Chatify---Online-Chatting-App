@@ -52,9 +52,8 @@ const Conversation = () => {
             setError(null);
             
             const storedUser = localStorage.getItem('user');
-            const storedToken = localStorage.getItem('token');
 
-            if (!storedToken) {
+            if (!storedUser) {
                 setError('Please login again');
                 setIsLoading(false);
                 showNotification('Please login again', 'error');
@@ -62,21 +61,19 @@ const Conversation = () => {
             }
 
             let user = null;
-            if (storedUser) {
-                try {
-                    user = JSON.parse(storedUser);
-                } catch (e) {
-                    console.error('Error parsing user:', e);
-                }
+            try {
+                user = JSON.parse(storedUser);
+            } catch (e) {
+                console.error('Error parsing user:', e);
             }
 
             // If no valid user, fetch from server
             if (!user || !user._id) {
                 try {
                     const response = await axios.get(API_ENDPOINTS.getMe, {
-                        headers: { Authorization: `Bearer ${storedToken}` },
+                        withCredentials: true,
                     });
-                    user = response.data;
+                    user = response.data.user || response.data;
                     localStorage.setItem('user', JSON.stringify(user));
                 } catch (error) {
                     console.error('Failed to get user:', error);
@@ -95,7 +92,7 @@ const Conversation = () => {
                 const res = await axios.post(
                     API_ENDPOINTS.getUsers,
                     {},
-                    { headers: { Authorization: `Bearer ${storedToken}` } }
+                    { withCredentials: true }
                 );
 
                 const others = res.data.filter(u => u._id !== user._id);
@@ -283,13 +280,10 @@ const Conversation = () => {
     // Handle logout
     const handleLogout = async () => {
         try {
-            const token = localStorage.getItem('token');
             await fetch(API_ENDPOINTS.logout, {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
                 credentials: 'include',
             });
-            localStorage.removeItem('token');
             localStorage.removeItem('user');
             window.location.href = '/login';
         } catch (error) {
