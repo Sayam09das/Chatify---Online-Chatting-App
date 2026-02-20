@@ -18,8 +18,11 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 // Initialize Firebase Auth
 const auth = getAuth(app);
 
-// Google Auth Provider
+// Configure Google Auth Provider with your project ID
 const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
 
 // Export for use in components
 export { app, auth, googleProvider, signInWithPopup };
@@ -29,9 +32,22 @@ export const signInWithGoogle = async () => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const idToken = await result.user.getIdToken();
+    
+    // Optionally verify the token locally first
+    console.log('Google Sign-In successful:', result.user.email);
+    
     return { idToken, user: result.user };
   } catch (error) {
     console.error('Google sign-in error:', error);
+    
+    // Provide more helpful error messages
+    if (error.code === 'auth/popup-closed-by-user') {
+      throw new Error('Sign-in was cancelled. Please try again.');
+    } else if (error.code === 'auth/account-exists-with-different-credential') {
+      throw new Error('An account already exists with a different sign-in method. Please try logging in with your original method.');
+    } else if (error.code === 'auth/internal-error') {
+      throw new Error('Authentication service error. Please check your network and try again.');
+    }
     throw error;
   }
 };
