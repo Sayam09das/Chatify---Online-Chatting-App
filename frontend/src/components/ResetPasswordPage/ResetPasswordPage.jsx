@@ -17,7 +17,7 @@ import {
     Key
 } from 'lucide-react';
 import axios from 'axios';
-import { API_ENDPOINTS } from '../config/api';
+import { API_ENDPOINTS } from '../../config/api';
 
 const ResetPasswordPage = () => {
     const navigate = useNavigate();

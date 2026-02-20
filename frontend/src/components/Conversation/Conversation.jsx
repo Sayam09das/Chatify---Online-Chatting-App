@@ -7,7 +7,7 @@ import Sidebar from '../Whatsapp/Sidebar';
 import ChatArea from '../Whatsapp/ChatArea';
 import VideoCall from '../Whatsapp/Viedocall';
 import Phonecall from '../Whatsapp/Phonecall';
-import API_URL, { API_ENDPOINTS } from '../config/api';
+import API_URL, { API_ENDPOINTS } from '../../config/api';
 
 // Initialize socket connection
 const socket = io(API_URL, {
