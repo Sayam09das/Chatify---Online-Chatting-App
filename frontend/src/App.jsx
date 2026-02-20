@@ -5,7 +5,6 @@ import GetStarted from './components/GetStarted/GetStarted';
 import Loginpage from './components/LoginPage/LoginPage';
 import RegisterPage from './components/RegisterPage/RegisterPage';
 import ForgotPasswordPage from './components/ForgotPasswordPage/ForgotPasswordPage';
-import ChatifyWhatsApp from './components/ChatifyWhatsApp/ChatifyWhatsApp';
 import TermsOfService from './components/TermsOfService/TermsOfService';
 import PrivacyPolicy from './components/PrivacyPolicy/PrivacyPolicy';
 import Features from './components/Features/Features';
@@ -40,7 +39,6 @@ const App = () => {
           <Route path="/login" element={<Loginpage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path='/chatify' element={<ChatifyWhatsApp />} />
         </Routes>
       </BrowserRouter>
     </div>
