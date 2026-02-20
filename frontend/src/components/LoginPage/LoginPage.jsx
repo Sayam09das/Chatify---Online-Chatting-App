@@ -8,6 +8,7 @@ import {
   MessageCircle, Mail, Lock, Eye, EyeOff,
   ArrowRight, Chrome, Smartphone, Shield, Zap,
 } from 'lucide-react';
+import { signInWithGoogle } from '../../firebase';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -15,6 +16,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [currentFeature, setCurrentFeature] = useState(0);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const validEmailDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
 
@@ -71,18 +73,50 @@ const LoginPage = () => {
     if (!validateForm()) return;
     try {
       const response = await axios.post('http://localhost:3000/auth/login', formData);
-      const { token, user } = response.data;
-      if (token && user) {
-        localStorage.setItem('token', token);
+      const { user } = response.data;
+      if (user) {
         localStorage.setItem('user', JSON.stringify(user));
         localStorage.setItem('senderId', user._id);
-      } else {
-        console.warn('Token or user missing in response');
+        
+        // Check if email is verified for local accounts
+        if (!user.emailVerified && user.provider === 'local') {
+          toast.warning('Please verify your email before continuing. Check your inbox for the verification link.');
+          return;
+        }
       }
       toast.success('Login successful!');
       setTimeout(() => navigate('/chatify'), 1000);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Login failed');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    try {
+      // Use Firebase Google Auth
+      const { idToken } = await signInWithGoogle();
+
+      // Send token to backend
+      const response = await axios.post('http://localhost:3000/auth/google', { idToken });
+      
+      const { user } = response.data;
+      if (user) {
+        localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem('senderId', user._id);
+      }
+      
+      toast.success('Google login successful!');
+      setTimeout(() => navigate('/chatify'), 1000);
+    } catch (error) {
+      console.error('Google login error:', error);
+      if (error.code === 'auth/popup-closed-by-user') {
+        toast.info('Google sign-in was cancelled');
+      } else {
+        toast.error(error.response?.data?.message || 'Google login failed');
+      }
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -287,8 +321,28 @@ const LoginPage = () => {
 
           {/* Social Buttons */}
           <div className="grid grid-cols-2 gap-3 mb-6">
+            <motion.button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isGoogleLoading}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 cursor-pointer hover:bg-green-50 hover:border-green-400 transition-colors disabled:opacity-50"
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+            >
+              {isGoogleLoading ? (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                >
+                  <Chrome size={18} className="text-green-600" />
+                </motion.div>
+              ) : (
+                <Chrome size={18} className="text-green-600" />
+              )}
+              Google
+            </motion.button>
             {[
-              { icon: Chrome, label: 'Google' },
               { icon: Smartphone, label: 'Phone' },
             ].map(({ icon: Icon, label }) => (
               <motion.button
@@ -319,3 +373,4 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
+

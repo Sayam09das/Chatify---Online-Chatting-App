@@ -5,6 +5,8 @@ import GetStarted from './components/GetStarted/GetStarted';
 import Loginpage from './components/LoginPage/LoginPage';
 import RegisterPage from './components/RegisterPage/RegisterPage';
 import ForgotPasswordPage from './components/ForgotPasswordPage/ForgotPasswordPage';
+import ResetPasswordPage from './components/ResetPasswordPage/ResetPasswordPage';
+import VerifyEmailPage from './components/VerifyEmailPage/VerifyEmailPage';
 import TermsOfService from './components/TermsOfService/TermsOfService';
 import PrivacyPolicy from './components/PrivacyPolicy/PrivacyPolicy';
 import Features from './components/Features/Features';
@@ -17,6 +19,7 @@ import CreatorStudio from './components/CreatorStudio/CreatorStudio';
 import Innovation from './components/Innovation/Innovation';
 import Support from './components/Support/Support';
 import Layout from './components/Layout/Layout';
+
 const App = () => {
   return (
     <div>
@@ -39,6 +42,8 @@ const App = () => {
           <Route path="/login" element={<Loginpage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
         </Routes>
       </BrowserRouter>
     </div>
@@ -46,3 +51,4 @@ const App = () => {
 };
 
 export default App;
+

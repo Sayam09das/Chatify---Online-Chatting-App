@@ -9,6 +9,8 @@ import {
     Chrome, Smartphone, Shield, Zap, CheckCircle,
     User, UserPlus, Phone, Camera, X, Check, Star, Sparkles
 } from 'lucide-react';
+import { signInWithGoogle } from '../../firebase';
+import axios from 'axios';
 
 /* ── Framer Motion Variants ── */
 const cardVariants = {
@@ -62,6 +64,7 @@ const RegisterPage = () => {
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [profileImagePreview, setProfileImagePreview] = useState(null);
     const fileInputRef = useRef(null);
+    const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
     const [formData, setFormData] = useState({
         username: '', fullName: '', email: '',
@@ -188,10 +191,10 @@ const RegisterPage = () => {
             const data = await response.json();
 
             if (response.ok) {
-                toast.success('🎉 Account created successfully! Welcome to Chatify!');
+                toast.success('🎉 Account created successfully! Please check your email to verify your account.');
                 setFormData({ username: '', fullName: '', email: '', phone: '', password: '', confirmPassword: '', profileImage: null });
                 setStep(1);
-                navigate('/chatify');
+                setTimeout(() => navigate('/login'), 2000);
             } else {
                 if (data.errors) {
                     const backendErrors = {};
@@ -205,6 +208,35 @@ const RegisterPage = () => {
         } catch (error) {
             console.error(error);
             toast.error('Something went wrong. Please try again.');
+        }
+    };
+
+    const handleGoogleRegister = async () => {
+        setIsGoogleLoading(true);
+        try {
+            // Use Firebase Google Auth
+            const { idToken } = await signInWithGoogle();
+
+            // Send token to backend
+            const response = await axios.post('http://localhost:3000/auth/google', { idToken });
+            
+            const { user } = response.data;
+            if (user) {
+                localStorage.setItem('user', JSON.stringify(user));
+                localStorage.setItem('senderId', user._id);
+            }
+            
+            toast.success('Google registration successful!');
+            setTimeout(() => navigate('/chatify'), 1000);
+        } catch (error) {
+            console.error('Google registration error:', error);
+            if (error.code === 'auth/popup-closed-by-user') {
+                toast.info('Google sign-in was cancelled');
+            } else {
+                toast.error(error.response?.data?.message || 'Google registration failed');
+            }
+        } finally {
+            setIsGoogleLoading(false);
         }
     };
 
@@ -755,8 +787,27 @@ const RegisterPage = () => {
                                             </div>
 
                                             <div className="grid grid-cols-2 gap-4 mt-4">
+                                                <motion.button
+                                                    type="button"
+                                                    onClick={handleGoogleRegister}
+                                                    disabled={isGoogleLoading}
+                                                    className="flex items-center justify-center px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-green-300 transition-colors duration-300 text-sm font-medium text-gray-700 disabled:opacity-50"
+                                                    whileHover={{ scale: 1.04, y: -2 }}
+                                                    whileTap={{ scale: 0.96 }}
+                                                >
+                                                    {isGoogleLoading ? (
+                                                        <motion.div
+                                                            animate={{ rotate: 360 }}
+                                                            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                                                        >
+                                                            <Chrome className="w-5 h-5 text-gray-600" />
+                                                        </motion.div>
+                                                    ) : (
+                                                        <Chrome className="w-5 h-5 text-gray-600 mr-2" />
+                                                    )}
+                                                    Google
+                                                </motion.button>
                                                 {[
-                                                    { icon: Chrome, label: 'Google' },
                                                     { icon: Smartphone, label: 'Phone' },
                                                 ].map(({ icon: Icon, label }) => (
                                                     <motion.button
@@ -766,7 +817,7 @@ const RegisterPage = () => {
                                                         whileHover={{ scale: 1.04, y: -2 }}
                                                         whileTap={{ scale: 0.96 }}
                                                     >
-                                                        <Icon className="w-5 h-5 mr-2 text-gray-600" />
+                                                        <Icon className="w-5 h-5 text-gray-600 mr-2" />
                                                         {label}
                                                     </motion.button>
                                                 ))}
@@ -811,3 +862,4 @@ const RegisterPage = () => {
 };
 
 export default RegisterPage;
+

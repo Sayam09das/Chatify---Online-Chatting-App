@@ -15,6 +15,7 @@ import {
     Lock,
     RefreshCw
 } from 'lucide-react';
+import axios from 'axios';
 
 const ForgotPasswordPage = () => {
     const [email, setEmail] = useState('');
@@ -66,23 +67,43 @@ const ForgotPasswordPage = () => {
 
         setIsLoading(true);
         
-        setTimeout(() => {
-            setIsLoading(false);
+        try {
+            const response = await axios.post('http://localhost:3000/auth/forgot-password', {
+                email
+            });
+
+            if (response.data.success) {
+                setIsSubmitted(true);
+                toast.success('Password reset email sent successfully! Please check your inbox.');
+            }
+        } catch (error) {
+            // Even if there's an error, show success to prevent email enumeration
             setIsSubmitted(true);
-            toast.success('Password reset email sent successfully!');
-        }, 2000);
+            toast.success('If an account exists with this email, a password reset link has been sent.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleResendEmail = () => {
+    const handleResendEmail = async () => {
         setIsLoading(true);
-        setTimeout(() => {
+        try {
+            const response = await axios.post('http://localhost:3000/auth/forgot-password', {
+                email
+            });
+
+            if (response.data.success) {
+                toast.success('Password reset email sent again! Please check your inbox.');
+            }
+        } catch (error) {
+            toast.success('If an account exists with this email, a password reset link has been sent.');
+        } finally {
             setIsLoading(false);
-            toast.success('Password reset email sent again!');
-        }, 1500);
+        }
     };
 
     const handleBackToLogin = () => {
-        toast.info('Redirecting to login page...');
+        window.location.href = '/login';
     };
 
     const handleKeyPress = (e) => {
@@ -93,7 +114,7 @@ const ForgotPasswordPage = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 relative overflow-hidden">
-            <ToastContainer />
+            <ToastContainer position="top-right" autoClose={3000} />
 
             {/* Animated Background Elements */}
             <motion.div
@@ -389,7 +410,7 @@ const ForgotPasswordPage = () => {
                                         We've sent a password reset link to<br />
                                         <span className="font-semibold text-blue-600 text-lg">{email}</span>
                                     </p>
-                                    
+
                                     <div className="space-y-4">
                                         <motion.button
                                             onClick={handleResendEmail}
@@ -475,3 +496,4 @@ const ForgotPasswordPage = () => {
 };
 
 export default ForgotPasswordPage;
+
