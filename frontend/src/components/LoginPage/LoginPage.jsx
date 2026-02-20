@@ -98,7 +98,7 @@ const LoginPage = () => {
       const { idToken } = await signInWithGoogle();
 
       // Send token to backend
-      const response = await axios.post('http://localhost:3000/auth/google', { idToken });
+const response = await axios.post('http://localhost:3000/api/auth/google', { idToken });
       
       const { user } = response.data;
       if (user) {
