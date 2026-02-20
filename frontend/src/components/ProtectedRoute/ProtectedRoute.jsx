@@ -1,7 +1,7 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, Outlet } from 'react-router-dom';
 
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = () => {
   const location = useLocation();
   
   // Check if user is logged in - check both localStorage and cookies
@@ -16,7 +16,8 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return children;
+  // Render the nested routes via Outlet
+  return <Outlet />;
 };
 
 export default ProtectedRoute;

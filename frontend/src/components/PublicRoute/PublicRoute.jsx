@@ -1,7 +1,7 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, Outlet } from 'react-router-dom';
 
-const PublicRoute = ({ children }) => {
+const PublicRoute = () => {
   const location = useLocation();
   
   // Check if user is logged in
@@ -19,7 +19,8 @@ const PublicRoute = ({ children }) => {
     return <Navigate to="/" replace />;
   }
 
-  return children;
+  // Render the nested routes via Outlet
+  return <Outlet />;
 };
 
 export default PublicRoute;
