@@ -16,6 +16,7 @@ import {
     RefreshCw
 } from 'lucide-react';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config/api';
 
 const ForgotPasswordPage = () => {
     const [email, setEmail] = useState('');
@@ -68,7 +69,7 @@ const ForgotPasswordPage = () => {
         setIsLoading(true);
         
         try {
-            const response = await axios.post('http://localhost:3000/auth/forgot-password', {
+            const response = await axios.post(API_ENDPOINTS.forgotPassword, {
                 email
             });
 
@@ -88,7 +89,7 @@ const ForgotPasswordPage = () => {
     const handleResendEmail = async () => {
         setIsLoading(true);
         try {
-            const response = await axios.post('http://localhost:3000/auth/forgot-password', {
+            const response = await axios.post(API_ENDPOINTS.forgotPassword, {
                 email
             });
 

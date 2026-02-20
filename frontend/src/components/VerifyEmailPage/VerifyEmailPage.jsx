@@ -15,6 +15,7 @@ import {
     Send
 } from 'lucide-react';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config/api';
 
 const VerifyEmailPage = () => {
     const navigate = useNavigate();
@@ -47,7 +48,7 @@ const VerifyEmailPage = () => {
 
     const verifyEmail = async (tokenToVerify) => {
         try {
-            const response = await axios.post('http://localhost:3000/auth/verify-email', {
+            const response = await axios.post(API_ENDPOINTS.verifyEmail, {
                 token: tokenToVerify
             });
 
@@ -78,7 +79,7 @@ const VerifyEmailPage = () => {
 
         setIsResending(true);
         try {
-            const response = await axios.post('http://localhost:3000/auth/resend-verification', {
+            const response = await axios.post(API_ENDPOINTS.resendVerification, {
                 email: resendEmail
             });
 

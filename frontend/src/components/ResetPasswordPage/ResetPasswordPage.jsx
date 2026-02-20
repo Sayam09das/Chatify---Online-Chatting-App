@@ -17,6 +17,7 @@ import {
     Key
 } from 'lucide-react';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config/api';
 
 const ResetPasswordPage = () => {
     const navigate = useNavigate();
@@ -95,7 +96,7 @@ const ResetPasswordPage = () => {
         setIsLoading(true);
         
         try {
-            const response = await axios.post('http://localhost:3000/auth/reset-password', {
+            const response = await axios.post(API_ENDPOINTS.resetPassword, {
                 token,
                 newPassword: password
             });

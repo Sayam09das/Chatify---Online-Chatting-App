@@ -1,181 +1,431 @@
-import React from 'react';
-import { motion } from 'framer-motion';
-import { Send, Image, Video, Phone, Paperclip, Smile, MoreVertical, Search, ArrowLeft } from 'lucide-react';
-import { Iphone } from '../ui/iphone';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import axios from 'axios';
+import io from 'socket.io-client';
+import { v4 as uuidv4 } from 'uuid';
+import Sidebar from '../Whatsapp/Sidebar';
+import ChatArea from '../Whatsapp/ChatArea';
+import VideoCall from '../Whatsapp/Viedocall';
+import Phonecall from '../Whatsapp/Phonecall';
+import API_URL, { API_ENDPOINTS } from '../config/api';
+
+// Initialize socket connection
+const socket = io(API_URL, {
+    withCredentials: true,
+    transports: ["websocket"],
+});
+
+// Helper to get avatar URL
+const getAvatarUrl = (profileImage) => {
+    if (!profileImage) return null;
+    return `${API_URL}/${profileImage.replace(/\\/g, '/')}`;
+};
 
 const Conversation = () => {
-  const chatList = [
-    { name: "Family Group", message: "Mom: Don't forget dinner tonight!", time: "2:30 PM", avatar: "👨‍👩‍👧‍👦", unread: 3, online: true },
-    { name: "Work Team", message: "Project deadline moved to Friday", time: "1:45 PM", avatar: "💼", unread: 0, online: true },
-    { name: "College Friends", message: "Sarah: Who's up for weekend trip?", time: "12:15 PM", avatar: "🎓", unread: 7, online: false },
-    { name: "Alex Johnson", message: "Thanks for the presentation help!", time: "11:30 AM", avatar: "👤", unread: 0, online: true },
-    { name: "Emma Davis", message: "See you tomorrow! 👋", time: "Yesterday", avatar: "👩", unread: 1, online: false },
-    { name: "Mike Chen", message: "Let's catch up soon", time: "Yesterday", avatar: "👨", unread: 0, online: true }
-  ];
+    const [currentUser, setCurrentUser] = useState(null);
+    const [chats, setChats] = useState([]);
+    const [allUsers, setAllUsers] = useState([]);
+    const [activeChat, setActiveChat] = useState(null);
+    const [showSidebar, setShowSidebar] = useState(true);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+    const [notifications, setNotifications] = useState([]);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  const messages = [
-    { id: 1, text: "Hey! How are you doing?", sender: "other", time: "2:30 PM", avatar: "👨‍👩‍👧‍👦" },
-    { id: 2, text: "I'm doing great! Just finished work. How about you?", sender: "me", time: "2:31 PM" },
-    { id: 3, text: "Pretty good! Are we still on for dinner tonight?", sender: "other", time: "2:32 PM", avatar: "👨‍👩‍👧‍👦" },
-    { id: 4, text: "Yes! Definitely. What time?", sender: "me", time: "2:33 PM" },
-    { id: 5, text: "How about 7 PM? There's this new Italian place I wanted to try 🍝", sender: "other", time: "2:34 PM", avatar: "👨‍👩‍👧‍👦" },
-    { id: 6, text: "Perfect! I'll meet you there. Can't wait! 😊", sender: "me", time: "2:35 PM" }
-  ];
+    // Call states
+    const [showVideoCall, setShowVideoCall] = useState(false);
+    const [showAudioCall, setShowAudioCall] = useState(false);
+    const [incomingCall, setIncomingCall] = useState(null);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 flex items-center justify-center p-4 md:p-8">
-      {/* iPhone Frame using ui/iphone.tsx */}
-      <motion.div 
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.5, type: "spring" }}
-      >
-        <Iphone className="max-w-[400px]">
-          {/* Chat App Header */}
-          <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 pt-12">
-            <div className="flex items-center space-x-3">
-              <button className="p-1 hover:bg-white/20 rounded-full transition-colors">
-                <ArrowLeft className="w-5 h-5 text-white" />
-              </button>
-              <div className="relative">
-                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-lg">
-                  👨‍👩‍👧‍👦
-                </div>
-                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-purple-600"></div>
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-sm">Family Group</h3>
-                <p className="text-xs text-purple-200">5 members • Online</p>
-              </div>
-              <div className="flex-1"></div>
-              <button className="p-2 hover:bg-white/20 rounded-full transition-colors">
-                <Phone className="w-4 h-4 text-white" />
-              </button>
-              <button className="p-2 hover:bg-white/20 rounded-full transition-colors">
-                <MoreVertical className="w-4 h-4 text-white" />
-              </button>
+    // Check for mobile on resize
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 1024);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Initialize user and fetch data
+    useEffect(() => {
+        const initializeUser = async () => {
+            const storedUser = localStorage.getItem('user');
+            const storedToken = localStorage.getItem('token');
+
+            if (!storedToken) {
+                showNotification('Please login again', 'error');
+                return;
+            }
+
+            let user = null;
+            if (storedUser) {
+                try {
+                    user = JSON.parse(storedUser);
+                } catch (e) {
+                    console.error('Error parsing user:', e);
+                }
+            }
+
+            // If no valid user, fetch from server
+            if (!user || !user._id) {
+                try {
+                    const response = await axios.get(API_ENDPOINTS.getMe, {
+                        headers: { Authorization: `Bearer ${storedToken}` },
+                    });
+                    user = response.data;
+                    localStorage.setItem('user', JSON.stringify(user));
+                } catch (error) {
+                    console.error('Failed to get user:', error);
+                    showNotification('Failed to authenticate', 'error');
+                    return;
+                }
+            }
+
+            setCurrentUser(user);
+            socket.emit('addUser', user._id);
+
+            // Fetch all users
+            try {
+                const res = await axios.post(
+                    API_ENDPOINTS.getUsers,
+                    {},
+                    { headers: { Authorization: `Bearer ${storedToken}` } }
+                );
+
+                const others = res.data.filter(u => u._id !== user._id);
+                setAllUsers(res.data);
+
+                // Create chat list from other users
+                const chatsData = others
+                    .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                    .map(u => ({
+                        _id: u._id,
+                        name: u.fullName,
+                        avatar: getAvatarUrl(u.profileImage),
+                        lastMessage: '',
+                        unread: 0,
+                        typing: false,
+                        online: false,
+                        time: '',
+                        messages: [],
+                    }));
+
+                setChats(chatsData);
+            } catch (error) {
+                console.error('Failed to fetch users:', error);
+            }
+        };
+
+        initializeUser();
+    }, []);
+
+    // Socket event listeners
+    useEffect(() => {
+        socket.on('receiveMessage', ({ chatId, message }) => {
+            setChats(prevChats => {
+                const chatExists = prevChats.find(c => c._id === chatId);
+                if (chatExists) {
+                    return prevChats.map(c =>
+                        c._id === chatId
+                            ? { ...c, messages: [...c.messages, message], lastMessage: message.text, time: 'now' }
+                            : c
+                    );
+                }
+                return prevChats;
+            });
+        });
+
+        socket.on('userOnline', ({ userId }) => {
+            setChats(prevChats =>
+                prevChats.map(c => (c._id === userId ? { ...c, online: true } : c))
+            );
+        });
+
+        socket.on('userOffline', ({ userId }) => {
+            setChats(prevChats =>
+                prevChats.map(c => (c._id === userId ? { ...c, online: false } : c))
+            );
+        });
+
+        // Handle incoming calls
+        socket.on('incomingCall', ({ callId, caller, type }) => {
+            setIncomingCall({ callId, caller, type });
+            if (type === 'video') {
+                setShowVideoCall(true);
+            } else {
+                setShowAudioCall(true);
+            }
+        });
+
+        socket.on('callAccepted', ({ callId }) => {
+            showNotification('Call accepted!', 'success');
+        });
+
+        socket.on('callDeclined', ({ callId }) => {
+            showNotification('Call declined', 'error');
+            setShowVideoCall(false);
+            setShowAudioCall(false);
+        });
+
+        return () => {
+            socket.off('receiveMessage');
+            socket.off('userOnline');
+            socket.off('userOffline');
+            socket.off('incomingCall');
+            socket.off('callAccepted');
+            socket.off('callDeclined');
+        };
+    }, []);
+
+    // Notification helper
+    const showNotification = (message, type = 'success') => {
+        const id = Date.now();
+        setNotifications(prev => [...prev, { id, message, type }]);
+        setTimeout(() => {
+            setNotifications(prev => prev.filter(n => n.id !== id));
+        }, 3000);
+    };
+
+    // Handle starting a new chat
+    const handleStartChat = (user) => {
+        if (user._id === currentUser?._id) {
+            showNotification("You can't chat with yourself!", 'error');
+            return;
+        }
+
+        const existingChat = chats.find(c => c._id === user._id);
+
+        if (existingChat) {
+            setActiveChat(existingChat);
+        } else {
+            const newChat = {
+                _id: user._id,
+                name: user.fullName,
+                avatar: getAvatarUrl(user.profileImage),
+                lastMessage: '',
+                unread: 0,
+                typing: false,
+                online: false,
+                time: '',
+                messages: [],
+            };
+            setChats(prev => [newChat, ...prev]);
+            setActiveChat(newChat);
+        }
+
+        if (isMobile) setShowSidebar(false);
+    };
+
+    // Handle selecting a chat
+    const handleSelectChat = (chat) => {
+        setActiveChat(chat);
+        if (isMobile) setShowSidebar(false);
+    };
+
+    // Handle sending a message
+    const handleSendMessage = (text) => {
+        if (!activeChat || !text.trim()) return;
+
+        const messageObj = {
+            text: text.trim(),
+            sender: currentUser._id,
+            receiver: activeChat._id,
+            timestamp: new Date().toISOString(),
+        };
+
+        const newMessage = {
+            _id: uuidv4(),
+            ...messageObj,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'sent',
+            senderName: currentUser.fullName,
+        };
+
+        // Update local state immediately
+        setChats(prevChats =>
+            prevChats.map(c =>
+                c._id === activeChat._id
+                    ? { ...c, messages: [...c.messages, newMessage], lastMessage: text.trim(), time: 'now' }
+                    : c
+            )
+        );
+
+        // Update active chat
+        setActiveChat(prev => ({
+            ...prev,
+            messages: [...prev.messages, newMessage],
+            lastMessage: text.trim(),
+            time: 'now',
+        }));
+
+        // Send via socket
+        socket.emit('sendMessage', {
+            chatId: activeChat._id,
+            message: messageObj,
+        });
+    };
+
+    // Handle back button on mobile
+    const handleBack = () => {
+        setShowSidebar(true);
+        setActiveChat(null);
+    };
+
+    // Handle logout
+    const handleLogout = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await fetch(API_ENDPOINTS.logout, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                credentials: 'include',
+            });
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+        } catch (error) {
+            console.error('Logout failed:', error);
+        }
+    };
+
+    // Call handlers
+    const handleCall = (type) => {
+        if (!activeChat) {
+            showNotification('Select a chat to start a call', 'error');
+            return;
+        }
+        
+        // Emit call event to server
+        socket.emit('initiateCall', {
+            calleeId: activeChat._id,
+            type,
+            caller: currentUser,
+        });
+
+        if (type === 'video') {
+            setShowVideoCall(true);
+        } else {
+            setShowAudioCall(true);
+        }
+    };
+
+    const handleAcceptCall = () => {
+        if (incomingCall) {
+            socket.emit('acceptCall', { callId: incomingCall.callId });
+        }
+        setIncomingCall(null);
+    };
+
+    const handleDeclineCall = () => {
+        if (incomingCall) {
+            socket.emit('declineCall', { callId: incomingCall.callId });
+        }
+        setIncomingCall(null);
+        setShowVideoCall(false);
+        setShowAudioCall(false);
+    };
+
+    const handleEndCall = () => {
+        setShowVideoCall(false);
+        setShowAudioCall(false);
+        setIncomingCall(null);
+    };
+
+    // Get current chat messages
+    const activeMessages = activeChat
+        ? chats.find(c => c._id === activeChat._id)?.messages || []
+        : [];
+
+    return (
+        <div className="h-screen bg-gray-100 flex overflow-hidden relative">
+            {/* Sidebar */}
+            <AnimatePresence mode="wait">
+                {(showSidebar || isMobile) && (
+                    <motion.div
+                        key="sidebar"
+                        initial={isMobile ? { x: '-100%' } : false}
+                        animate={{ x: 0 }}
+                        exit={isMobile ? { x: '-100%' } : false}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        className="relative z-30"
+                    >
+                        <Sidebar
+                            currentUser={currentUser}
+                            chats={chats}
+                            allUsers={allUsers}
+                            activeChat={activeChat}
+                            onSelectChat={handleSelectChat}
+                            onStartChat={handleStartChat}
+                            onLogout={handleLogout}
+                            isOpen={showSidebar}
+                            onClose={() => setShowSidebar(false)}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Chat Area */}
+            <motion.div
+                key="chat"
+                initial={isMobile ? { x: '100%' } : false}
+                animate={{ x: 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                className="flex-1 flex flex-col h-full"
+            >
+                <ChatArea
+                    chat={activeChat}
+                    messages={activeMessages}
+                    currentUser={currentUser}
+                    onSendMessage={handleSendMessage}
+                    onBack={handleBack}
+                    onCall={() => handleCall('audio')}
+                    onVideoCall={() => handleCall('video')}
+                    onEmojiToggle={() => setShowEmojiPicker(!showEmojiPicker)}
+                    showEmojiPicker={showEmojiPicker}
+                    onAttachToggle={() => {}}
+                />
+            </motion.div>
+
+            {/* Video Call Modal */}
+            <VideoCall
+                isOpen={showVideoCall}
+                onClose={handleEndCall}
+                callType="video"
+                user={activeChat || incomingCall?.caller || { name: 'Unknown' }}
+                isIncoming={!!incomingCall && incomingCall.type === 'video'}
+                onAccept={handleAcceptCall}
+                onDecline={handleDeclineCall}
+            />
+
+            {/* Audio Call Modal */}
+            <Phonecall
+                isOpen={showAudioCall}
+                onClose={handleEndCall}
+                callType="audio"
+                user={activeChat || incomingCall?.caller || { name: 'Unknown' }}
+                isIncoming={!!incomingCall && incomingCall.type === 'audio'}
+                onAccept={handleAcceptCall}
+                onDecline={handleDeclineCall}
+            />
+
+            {/* Notifications */}
+            <div className="fixed top-4 right-4 z-50 space-y-2">
+                <AnimatePresence>
+                    {notifications.map(n => (
+                        <motion.div
+                            key={n.id}
+                            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+                            className={`px-4 py-3 rounded-lg shadow-xl ${
+                                n.type === 'error' ? 'bg-red-500' : 'bg-[#25d366]'
+                            } text-white text-sm font-medium`}
+                        >
+                            {n.message}
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
             </div>
-          </div>
-
-          {/* Messages Area */}
-          <div className="h-[calc(100%-140px)] overflow-y-auto bg-gradient-to-b from-purple-50 to-indigo-50 p-3">
-            <div className="space-y-2">
-              {messages.map((message) => (
-                <motion.div
-                  key={message.id}
-                  className={`flex ${message.sender === 'me' ? 'justify-end' : 'justify-start'}`}
-                  initial={{ y: 10, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <div className={`flex items-end space-x-1 max-w-[75%] ${message.sender === 'me' ? 'flex-row-reverse' : ''}`}>
-                    {message.sender === 'other' && (
-                      <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center text-xs self-end">
-                        {message.avatar}
-                      </div>
-                    )}
-                    <div className={`px-3 py-2 rounded-2xl ${
-                      message.sender === 'me' 
-                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-br-md' 
-                        : 'bg-white text-gray-900 rounded-bl-md shadow-sm'
-                    }`}>
-                      <p className="text-xs">{message.text}</p>
-                      <span className={`text-[10px] ${message.sender === 'me' ? 'text-purple-200' : 'text-gray-400'} mt-1 block`}>
-                        {message.time}
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-
-          {/* Message Input */}
-          <div className="absolute bottom-0 left-0 right-0 p-3 bg-white border-t border-gray-100">
-            <div className="flex items-center space-x-2">
-              <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                <Smile className="w-5 h-5 text-gray-500" />
-              </button>
-              <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                <Paperclip className="w-5 h-5 text-gray-500" />
-              </button>
-              <input
-                type="text"
-                placeholder="Type a message..."
-                className="flex-1 bg-gray-100 rounded-full px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <motion.button
-                className="w-10 h-10 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full flex items-center justify-center text-white"
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-              >
-                <Send className="w-4 h-4" />
-              </motion.button>
-            </div>
-          </div>
-        </Iphone>
-      </motion.div>
-
-      {/* Chat List Sidebar (Desktop only) */}
-      <div className="hidden lg:block ml-8">
-        <motion.div 
-          className="bg-white rounded-3xl shadow-xl overflow-hidden w-80"
-          initial={{ x: 50, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
-        >
-          {/* Search */}
-          <div className="p-4 bg-gradient-to-r from-purple-600 to-indigo-600">
-            <div className="flex items-center space-x-3 bg-white/20 backdrop-blur rounded-xl px-4 py-3">
-              <Search className="w-5 h-5 text-white" />
-              <input 
-                type="text" 
-                placeholder="Search or start new chat" 
-                className="flex-1 outline-none text-sm bg-transparent text-white placeholder-white"
-              />
-            </div>
-          </div>
-
-          {/* Chat List */}
-          <div className="overflow-y-auto h-[600px]">
-            {chatList.map((chat, index) => (
-              <motion.div
-                key={index}
-                className="flex items-center space-x-3 p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100"
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1 * index }}
-                whileHover={{ x: 5 }}
-              >
-                <div className="relative">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-2xl">
-                    {chat.avatar}
-                  </div>
-                  {chat.online && (
-                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start">
-                    <h4 className="font-semibold text-gray-900 truncate text-sm">{chat.name}</h4>
-                    <span className="text-xs text-gray-500 ml-2">{chat.time}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <p className="text-xs text-gray-600 truncate">{chat.message}</p>
-                    {chat.unread > 0 && (
-                      <span className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold rounded-full px-2 py-0.5 ml-2">
-                        {chat.unread}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      </div>
-    </div>
-  );
+        </div>
+    );
 };
 
 export default Conversation;
+
