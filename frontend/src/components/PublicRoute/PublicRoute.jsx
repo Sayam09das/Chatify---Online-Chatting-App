@@ -15,11 +15,7 @@ const PublicRoute = () => {
     return <Navigate to="/chatify" replace />;
   }
 
-  // If trying to access login/register, redirect to GetStarted
-  if (location.pathname === '/login' || location.pathname === '/register') {
-    return <Navigate to="/" replace />;
-  }
-
+  // Allow access to login and register pages for unauthenticated users
   // Render the nested routes via Outlet
   return <Outlet />;
 };
