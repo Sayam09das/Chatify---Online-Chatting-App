@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { signInWithGoogle } from '../../firebase';
 import axios from 'axios';
+import { API_ENDPOINTS } from '../../config/api';
 
 /* ── Framer Motion Variants ── */
 const cardVariants = {
@@ -185,7 +186,7 @@ const RegisterPage = () => {
             formDataToSend.append('password', formData.password);
             if (formData.profileImage) formDataToSend.append('profileImage', formData.profileImage);
 
-            const response = await fetch('http://localhost:3000/auth/register', {
+            const response = await fetch(API_ENDPOINTS.register, {
                 method: 'POST', body: formDataToSend
             });
             const data = await response.json();
@@ -218,7 +219,7 @@ const RegisterPage = () => {
             const { idToken } = await signInWithGoogle();
 
             // Send token to backend
-const response = await axios.post('http://localhost:3000/api/auth/google', { idToken });
+            const response = await axios.post(API_ENDPOINTS.googleAuth, { idToken });
             
             const { user } = response.data;
             if (user) {

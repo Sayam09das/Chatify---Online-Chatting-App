@@ -9,6 +9,7 @@ import {
   ArrowRight, Chrome, Smartphone, Shield, Zap,
 } from 'lucide-react';
 import { signInWithGoogle } from '../../firebase';
+import { API_ENDPOINTS } from '../../config/api';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -72,7 +73,7 @@ const LoginPage = () => {
     e.preventDefault();
     if (!validateForm()) return;
     try {
-      const response = await axios.post('http://localhost:3000/auth/login', formData);
+      const response = await axios.post(API_ENDPOINTS.login, formData);
       const { user } = response.data;
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
@@ -98,7 +99,7 @@ const LoginPage = () => {
       const { idToken } = await signInWithGoogle();
 
       // Send token to backend
-const response = await axios.post('http://localhost:3000/api/auth/google', { idToken });
+      const response = await axios.post(API_ENDPOINTS.googleAuth, { idToken });
       
       const { user } = response.data;
       if (user) {
