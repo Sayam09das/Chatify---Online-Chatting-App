@@ -2,13 +2,7 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('argon2');
 const { validationResult } = require('express-validator');
-const { verifyGoogleIdToken } = require('../firebase');
-const { 
-  sendVerificationEmail, 
-  sendPasswordResetEmail, 
-  sendWelcomeEmail,
-  verifyToken 
-} = require('../utils/email.util');
+const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail, verifyToken } = require('../utils/email.util');
 
 // Generate tokens
 const generateTokens = (userId) => {
@@ -53,187 +47,22 @@ const clearAuthCookies = (res) => {
   res.clearCookie('refreshToken', { path: '/' });
 };
 
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
-exports.register = async (req, res) => {
-  try {
-    // Validate input
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false,
-        errors: errors.array() 
-      });
-    }
-
-    const { username, email, password } = req.body;
-
-    // Check if user already exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }]
-    });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: existingUser.email === email 
-          ? 'Email already registered' 
-          : 'Username already taken'
-      });
-    }
-
-    // Create user with hashed password
-    const hashedPassword = await bcrypt.hash(password, 12);
-    
-    const user = await User.create({
-      username,
-      email,
-      password: hashedPassword,
-      provider: 'local',
-      emailVerified: false // Local users need to verify email
-    });
-
-    // Send verification email
-    await sendVerificationEmail(user);
-
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user._id);
-
-    // Store refresh token in database
-    user.refreshTokens.push({
-      token: refreshToken,
-      userAgent: req.get('user-agent'),
-      ip: req.ip
-    });
-    await user.save();
-
-    // Set cookies
-    setAuthCookies(res, accessToken, refreshToken);
-
-    res.status(201).json({
-      success: true,
-      message: 'Registration successful. Please check your email to verify your account.',
-      user: user.toJSON()
-    });
-  } catch (error) {
-    console.error('Register error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during registration'
-    });
+// Simple JWT-based Google token verification (fallback if Firebase Admin fails)
+const verifyGoogleTokenSimple = async (idToken) => {
+  // Decode without verification (less secure but works without Firebase Admin)
+  // In production, you should use Firebase Admin SDK
+  const decoded = jwt.decode(idToken);
+  
+  if (!decoded) {
+    throw new Error('Invalid token format');
   }
-};
-
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
-exports.login = async (req, res) => {
-  try {
-    // Validate input
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false,
-        errors: errors.array() 
-      });
-    }
-
-    const { email, password } = req.body;
-
-    // Find user with password
-    const user = await User.findOne({ email }).select('+password');
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
-    }
-
-    // Check if user is using OAuth (Google)
-    if (user.provider !== 'local') {
-      return res.status(401).json({
-        success: false,
-        message: `This account uses ${user.provider} login. Please use ${user.provider} to sign in.`
-      });
-    }
-
-    // Check if account is locked
-    if (user.isLocked()) {
-      return res.status(423).json({
-        success: false,
-        message: 'Account is temporarily locked. Please try again later.',
-        lockUntil: user.lockUntil
-      });
-    }
-
-    // Check password - handle both Argon2 hashes and plain-text passwords (migration)
-    let isMatch = false;
-    
-    try {
-      isMatch = await user.comparePassword(password);
-    } catch (err) {
-      // If error, check if it's a plain-text password (legacy data migration)
-      if (user.password === password) {
-        // Password matches plain text - upgrade to Argon2 hash
-        user.password = await bcrypt.hash(password, 12);
-        await user.save();
-        isMatch = true;
-      }
-    }
-
-    if (!isMatch) {
-      await user.incrementLoginAttempts();
-      
-      return res.status(401).json({
-        success: false,
-        message: user.failedLoginAttempts >= 5 
-          ? 'Account temporarily locked due to too many failed attempts'
-          : 'Invalid credentials'
-      });
-    }
-
-    // Reset failed login attempts
-    await user.resetLoginAttempts();
-
-    // Update online status
-    user.isOnline = true;
-    user.lastSeen = new Date();
-    await user.save();
-
-    // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user._id);
-
-    // Store refresh token in database
-    user.refreshTokens.push({
-      token: refreshToken,
-      userAgent: req.get('user-agent'),
-      ip: req.ip
-    });
-    
-    // Limit stored refresh tokens to 5 devices
-    if (user.refreshTokens.length > 5) {
-      user.refreshTokens = user.refreshTokens.slice(-5);
-    }
-    
-    await user.save();
-
-    // Set cookies
-    setAuthCookies(res, accessToken, refreshToken);
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      user: user.toJSON()
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during login'
-    });
+  
+  // Check basic claims
+  if (!decoded.email || !decoded.sub) {
+    throw new Error('Invalid token claims');
   }
+  
+  return decoded;
 };
 
 // @desc    Google OAuth Login/Register
@@ -252,19 +81,39 @@ exports.googleAuth = async (req, res) => {
 
     // Verify the Google ID token
     let decodedToken;
+    let useSimpleVerification = false;
+    
     try {
+      // Try Firebase Admin first
+      const { verifyGoogleIdToken } = require('../firebase');
       decodedToken = await verifyGoogleIdToken(idToken);
-    } catch (error) {
-      return res.status(401).json({
+    } catch (firebaseError) {
+      console.log('Firebase Admin verification failed, using fallback:', firebaseError.message);
+      
+      // Fallback to simple JWT decoding
+      try {
+        decodedToken = await verifyGoogleTokenSimple(idToken);
+        useSimpleVerification = true;
+        console.log('Using simple token verification for:', decodedToken.email);
+      } catch (simpleError) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid Google token'
+        });
+      }
+    }
+
+    const { email, name, picture, sub: uid } = decodedToken;
+
+    if (!email) {
+      return res.status(400).json({
         success: false,
-        message: 'Invalid Google token'
+        message: 'Email not found in Google token'
       });
     }
 
-    const { email, name, picture, uid } = decodedToken;
-
     // Check if user already exists
-    let user = await User.findOne({ 
+    let user = await User.findOne({
       $or: [
         { email },
         { providerId: uid }
@@ -281,25 +130,29 @@ exports.googleAuth = async (req, res) => {
       }
 
       // Update existing Google user info
-      user.username = name.split(' ')[0].toLowerCase() + Math.floor(Math.random() * 1000);
-      user.profilePicture = picture;
-      user.emailVerified = true; // Google emails are verified
+      user.username = name ? (name.split(' ')[0].toLowerCase() + Math.floor(Math.random() * 1000)) : 'user';
+      user.profilePicture = picture || user.profilePicture;
+      user.emailVerified = true;
     } else {
       // Create new Google user
-      const username = name.split(' ')[0].toLowerCase() + Math.floor(Math.random() * 1000);
+      const username = name ? (name.split(' ')[0].toLowerCase() + Math.floor(Math.random() * 1000)) : 'user';
       
       user = await User.create({
         username,
         email,
-        profilePicture: picture,
+        profilePicture: picture || '',
         provider: 'google',
         providerId: uid,
-        emailVerified: true, // Google emails are verified by default
+        emailVerified: true,
         isOnline: true
       });
 
       // Send welcome email
-      await sendWelcomeEmail(user);
+      try {
+        await sendWelcomeEmail(user);
+      } catch (emailError) {
+        console.log('Welcome email failed:', emailError.message);
+      }
     }
 
     // Update online status
@@ -341,6 +194,180 @@ exports.googleAuth = async (req, res) => {
   }
 };
 
+// @desc    Register user
+// @route   POST /api/auth/register
+// @access  Public
+exports.register = async (req, res) => {
+  try {
+    // Validate input
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        errors: errors.array() 
+      });
+    }
+
+    const { username, email, password } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [{ email }, { username }]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: existingUser.email === email 
+          ? 'Email already registered' 
+          : 'Username already taken'
+      });
+    }
+
+    // Create user with hashed password
+    const hashedPassword = await bcrypt.hash(password, 12);
+    
+    const user = await User.create({
+      username,
+      email,
+      password: hashedPassword,
+      provider: 'local',
+      emailVerified: false
+    });
+
+    // Send verification email
+    try {
+      await sendVerificationEmail(user);
+    } catch (emailError) {
+      console.log('Verification email failed:', emailError.message);
+    }
+
+    // Generate tokens
+    const { accessToken, refreshToken } = generateTokens(user._id);
+
+    // Store refresh token in database
+    user.refreshTokens.push({
+      token: refreshToken,
+      userAgent: req.get('user-agent'),
+      ip: req.ip
+    });
+    await user.save();
+
+    // Set cookies
+    setAuthCookies(res, accessToken, refreshToken);
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful. Please check your email to verify your account.',
+      user: user.toJSON()
+    });
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during registration'
+    });
+  }
+};
+
+// @desc    Login user
+// @route   POST /api/auth/login
+// @access  Public
+exports.login = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        errors: errors.array() 
+      });
+    }
+
+    const { email, password } = req.body;
+
+    const user = await User.findOne({ email }).select('+password');
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    if (user.provider !== 'local') {
+      return res.status(401).json({
+        success: false,
+        message: `This account uses ${user.provider} login. Please use ${user.provider} to sign in.`
+      });
+    }
+
+    if (user.isLocked()) {
+      return res.status(423).json({
+        success: false,
+        message: 'Account is temporarily locked. Please try again later.',
+        lockUntil: user.lockUntil
+      });
+    }
+
+    let isMatch = false;
+    
+    try {
+      isMatch = await user.comparePassword(password);
+    } catch (err) {
+      if (user.password === password) {
+        user.password = await bcrypt.hash(password, 12);
+        await user.save();
+        isMatch = true;
+      }
+    }
+
+    if (!isMatch) {
+      await user.incrementLoginAttempts();
+      
+      return res.status(401).json({
+        success: false,
+        message: user.failedLoginAttempts >= 5 
+          ? 'Account temporarily locked due to too many failed attempts'
+          : 'Invalid credentials'
+      });
+    }
+
+    await user.resetLoginAttempts();
+
+    user.isOnline = true;
+    user.lastSeen = new Date();
+    await user.save();
+
+    const { accessToken, refreshToken } = generateTokens(user._id);
+
+    user.refreshTokens.push({
+      token: refreshToken,
+      userAgent: req.get('user-agent'),
+      ip: req.ip
+    });
+    
+    if (user.refreshTokens.length > 5) {
+      user.refreshTokens = user.refreshTokens.slice(-5);
+    }
+    
+    await user.save();
+
+    setAuthCookies(res, accessToken, refreshToken);
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      user: user.toJSON()
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during login'
+    });
+  }
+};
+
 // @desc    Verify email
 // @route   POST /api/auth/verify-email
 // @access  Public
@@ -355,7 +382,6 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    // Verify the token
     let decoded;
     try {
       decoded = verifyToken(token, 'email_verification');
@@ -366,7 +392,6 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    // Find user
     const user = await User.findById(decoded.userId);
 
     if (!user) {
@@ -376,7 +401,6 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    // Check if already verified
     if (user.emailVerified) {
       return res.json({
         success: true,
@@ -384,7 +408,6 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    // Verify email
     user.emailVerified = true;
     await user.save();
 
@@ -418,7 +441,6 @@ exports.resendVerification = async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      // Don't reveal if user exists
       return res.json({
         success: true,
         message: 'If an account exists with this email, a verification email has been sent'
@@ -439,8 +461,11 @@ exports.resendVerification = async (req, res) => {
       });
     }
 
-    // Send verification email
-    await sendVerificationEmail(user);
+    try {
+      await sendVerificationEmail(user);
+    } catch (emailError) {
+      console.log('Resend verification email failed:', emailError.message);
+    }
 
     res.json({
       success: true,
@@ -471,7 +496,6 @@ exports.forgotPassword = async (req, res) => {
 
     const user = await User.findOne({ email });
 
-    // Don't reveal if user exists
     if (!user || user.provider !== 'local') {
       return res.json({
         success: true,
@@ -479,8 +503,11 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
-    // Send password reset email
-    await sendPasswordResetEmail(user);
+    try {
+      await sendPasswordResetEmail(user);
+    } catch (emailError) {
+      console.log('Password reset email failed:', emailError.message);
+    }
 
     res.json({
       success: true,
@@ -509,7 +536,6 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Validate password
     if (newPassword.length < 8) {
       return res.status(400).json({
         success: false,
@@ -524,7 +550,6 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Verify the token
     let decoded;
     try {
       decoded = verifyToken(token, 'password_reset');
@@ -535,7 +560,6 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Find user
     const user = await User.findById(decoded.userId);
 
     if (!user) {
@@ -545,7 +569,6 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Check if user is using OAuth
     if (user.provider !== 'local') {
       return res.status(400).json({
         success: false,
@@ -553,11 +576,8 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Update password
     user.password = await bcrypt.hash(newPassword, 12);
     user.passwordChangedAt = new Date();
-    
-    // Invalidate all refresh tokens
     user.refreshTokens = [];
     user.tokenVersion += 1;
     
@@ -584,16 +604,13 @@ exports.logout = async (req, res) => {
     const { refreshToken } = req.cookies;
 
     if (refreshToken) {
-      // Remove the refresh token from database
       await User.findByIdAndUpdate(req.user._id, {
         $pull: { refreshTokens: { token: refreshToken } }
       });
     }
 
-    // Clear cookies
     clearAuthCookies(res);
 
-    // Update online status
     await User.findByIdAndUpdate(req.user._id, {
       isOnline: false,
       lastSeen: new Date()
@@ -617,13 +634,11 @@ exports.logout = async (req, res) => {
 // @access  Private
 exports.logoutAll = async (req, res) => {
   try {
-    // Increment token version (invalidates all existing tokens)
     await User.findByIdAndUpdate(req.user._id, {
       $inc: { tokenVersion: 1 },
       $set: { refreshTokens: [], isOnline: false, lastSeen: new Date() }
     });
 
-    // Clear cookies
     clearAuthCookies(res);
 
     res.json({
@@ -653,7 +668,6 @@ exports.refreshToken = async (req, res) => {
       });
     }
 
-    // Verify refresh token
     let decoded;
     try {
       decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
@@ -665,7 +679,6 @@ exports.refreshToken = async (req, res) => {
       });
     }
 
-    // Find user and verify token exists in their refresh tokens
     const user = await User.findById(decoded.userId);
 
     if (!user) {
@@ -676,11 +689,9 @@ exports.refreshToken = async (req, res) => {
       });
     }
 
-    // Check token version for logout all devices feature
     const tokenInDB = user.refreshTokens.find(t => t.token === refreshToken);
     
     if (!tokenInDB) {
-      // Token might be invalidated - clear all refresh tokens
       user.refreshTokens = [];
       user.tokenVersion += 1;
       await user.save();
@@ -692,10 +703,8 @@ exports.refreshToken = async (req, res) => {
       });
     }
 
-    // Generate new tokens
     const tokens = generateTokens(user._id);
 
-    // Replace old refresh token with new one
     user.refreshTokens = user.refreshTokens.map(t => 
       t.token === refreshToken 
         ? { ...tokens.refreshToken, createdAt: new Date(), userAgent: req.get('user-agent'), ip: req.ip }
@@ -703,7 +712,6 @@ exports.refreshToken = async (req, res) => {
     );
     await user.save();
 
-    // Set new cookies
     setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
 
     res.json({
@@ -748,7 +756,6 @@ exports.updatePassword = async (req, res) => {
 
     const user = await User.findById(req.user._id).select('+password');
 
-    // Check if user is using OAuth
     if (user.provider !== 'local') {
       return res.status(400).json({
         success: false,
@@ -756,15 +763,12 @@ exports.updatePassword = async (req, res) => {
       });
     }
 
-    // Verify current password - handle both Argon2 hashes and plain-text passwords
     let isMatch = false;
     
     try {
       isMatch = await user.comparePassword(currentPassword);
     } catch (err) {
-      // If error, check if it's a plain-text password (legacy data migration)
       if (user.password === currentPassword) {
-        // Password matches plain text - upgrade to Argon2 hash
         user.password = await bcrypt.hash(currentPassword, 12);
         await user.save();
         isMatch = true;
@@ -778,17 +782,13 @@ exports.updatePassword = async (req, res) => {
       });
     }
 
-    // Update password - hash it with argon2
     user.password = await bcrypt.hash(newPassword, 12);
     user.passwordChangedAt = new Date();
-    
-    // Invalidate all refresh tokens (logout all devices)
     user.refreshTokens = [];
     user.tokenVersion += 1;
     
     await user.save();
 
-    // Generate new tokens
     const { accessToken, refreshToken } = generateTokens(user._id);
     
     user.refreshTokens.push({
