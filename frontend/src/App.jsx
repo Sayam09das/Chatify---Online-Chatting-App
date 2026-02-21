@@ -22,23 +22,20 @@ import Layout from './components/Layout/Layout';
 import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
 import PublicRoute from './components/PublicRoute/PublicRoute';
 
-// Check if user is authenticated
-const isAuthenticated = () => {
-  const user = localStorage.getItem('user');
-  const token = localStorage.getItem('token');
-  return !!(user && token);
-};
-
 const App = () => {
   return (
     <div>
       <BrowserRouter>
         <Routes>
-          {/* Protected Routes - require authentication */}
+          {/* Chat Routes - No Navbar/Footer */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/chatify" element={<Conversation />} />
+            <Route path="/conversation" element={<Conversation />} />
+          </Route>
+
+          {/* Protected Routes with Layout - require authentication */}
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
-              <Route path="/chatify" element={<Conversation />} />
-              <Route path="/conversation" element={<Conversation />} />
               <Route path="/ai-space" element={<AISpace />} />
               <Route path="/community-hub" element={<CommunityHub />} />
               <Route path="/creator-studio" element={<CreatorStudio />} />
@@ -55,7 +52,7 @@ const App = () => {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
           </Route>
 
-          {/* Public Routes - accessible to everyone */}
+          {/* Public Routes - accessible to everyone with Layout */}
           <Route element={<Layout />}>
             <Route path="/" element={<GetStarted />} />
             <Route path="/features" element={<Features />} />
