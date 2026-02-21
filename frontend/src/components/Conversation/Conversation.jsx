@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
+import axios from '@/config/axios';
 import io from 'socket.io-client';
 import { v4 as uuidv4 } from 'uuid';
 import Sidebar from '@/Whatsapp/Sidebar';
@@ -96,9 +96,7 @@ const Conversation = () => {
             // If no valid user, fetch from server
             if (!user || !user._id) {
                 try {
-                    const response = await axios.get(API_ENDPOINTS.getMe, {
-                        withCredentials: true,
-                    });
+                    const response = await axios.get(API_ENDPOINTS.getMe);
                     user = response.data.user || response.data;
                     localStorage.setItem('user', JSON.stringify(user));
                 } catch (error) {
@@ -117,8 +115,7 @@ const Conversation = () => {
             try {
                 const res = await axios.post(
                     API_ENDPOINTS.getUsers,
-                    {},
-                    { withCredentials: true }
+                    {}
                 );
 
                 const others = res.data.filter(u => u._id !== user._id);
@@ -395,10 +392,7 @@ const Conversation = () => {
     // Handle logout
     const handleLogout = async () => {
         try {
-            await fetch(API_ENDPOINTS.logout, {
-                method: 'POST',
-                credentials: 'include',
-            });
+            await axios.post(API_ENDPOINTS.logout);
             localStorage.removeItem('user');
             window.location.href = '/login';
         } catch (error) {

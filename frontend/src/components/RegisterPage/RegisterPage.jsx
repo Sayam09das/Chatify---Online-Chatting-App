@@ -10,7 +10,7 @@ import {
     User, UserPlus, Phone, Camera, X, Check, Star, Sparkles
 } from 'lucide-react';
 import { signInWithGoogle } from '../../firebase';
-import axios from 'axios';
+import axios from '@/config/axios';
 import { API_ENDPOINTS } from '../../config/api';
 
 /* ── Framer Motion Variants ── */
@@ -186,29 +186,24 @@ const RegisterPage = () => {
             formDataToSend.append('password', formData.password);
             if (formData.profileImage) formDataToSend.append('profileImage', formData.profileImage);
 
-            const response = await fetch(API_ENDPOINTS.register, {
-                method: 'POST', body: formDataToSend
-            });
-            const data = await response.json();
+            const response = await axios.post(API_ENDPOINTS.register, formDataToSend);
 
-            if (response.ok) {
+            if (response.data.success) {
                 toast.success('🎉 Account created successfully! Please check your email to verify your account.');
                 setFormData({ username: '', fullName: '', email: '', phone: '', password: '', confirmPassword: '', profileImage: null });
                 setStep(1);
                 setTimeout(() => navigate('/login'), 2000);
-            } else {
-                if (data.errors) {
-                    const backendErrors = {};
-                    data.errors.forEach(err => { backendErrors[err.path] = err.msg; });
-                    setFormErrors(backendErrors);
-                    toast.error('Please fix the errors from the server.');
-                } else {
-                    toast.error(data.message || 'Registration failed.');
-                }
             }
         } catch (error) {
-            console.error(error);
-            toast.error('Something went wrong. Please try again.');
+            const data = error.response?.data;
+            if (data?.errors) {
+                const backendErrors = {};
+                data.errors.forEach(err => { backendErrors[err.path] = err.msg; });
+                setFormErrors(backendErrors);
+                toast.error('Please fix the errors from the server.');
+            } else {
+                toast.error(data?.message || 'Registration failed.');
+            }
         }
     };
 

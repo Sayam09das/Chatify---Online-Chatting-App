@@ -15,7 +15,7 @@ import {
     Lock,
     RefreshCw
 } from 'lucide-react';
-import axios from 'axios';
+import axios from '@/config/axios';
 import { API_ENDPOINTS } from '../../config/api';
 
 const ForgotPasswordPage = () => {

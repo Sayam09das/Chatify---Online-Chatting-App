@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import axios from '@/config/axios';
 import {
   MessageCircle, Mail, Lock, Eye, EyeOff,
   ArrowRight, Chrome, Smartphone, Shield, Zap,

@@ -23,10 +23,12 @@ const generateTokens = (userId) => {
 
 // Set cookies
 const setAuthCookies = (res, accessToken, refreshToken) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
     path: '/'
   };
 
@@ -180,10 +182,14 @@ exports.googleAuth = async (req, res) => {
     // Set cookies
     setAuthCookies(res, accessToken, refreshToken);
 
+    // Return user with access token for localStorage
+    const userResponse = user.toJSON();
+    userResponse.accessToken = accessToken;
+
     res.json({
       success: true,
       message: 'Google login successful',
-      user: user.toJSON()
+      user: userResponse
     });
   } catch (error) {
     console.error('Google auth error:', error);
@@ -256,10 +262,14 @@ exports.register = async (req, res) => {
     // Set cookies
     setAuthCookies(res, accessToken, refreshToken);
 
+    // Return user with access token for localStorage
+    const userResponse = user.toJSON();
+    userResponse.accessToken = accessToken;
+
     res.status(201).json({
       success: true,
       message: 'Registration successful. Please check your email to verify your account.',
-      user: user.toJSON()
+      user: userResponse
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -354,10 +364,14 @@ exports.login = async (req, res) => {
 
     setAuthCookies(res, accessToken, refreshToken);
 
+    // Return user with access token for localStorage
+    const userResponse = user.toJSON();
+    userResponse.accessToken = accessToken;
+
     res.json({
       success: true,
       message: 'Login successful',
-      user: user.toJSON()
+      user: userResponse
     });
   } catch (error) {
     console.error('Login error:', error);

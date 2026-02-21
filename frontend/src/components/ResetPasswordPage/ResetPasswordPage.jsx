@@ -16,7 +16,7 @@ import {
     Shield,
     Key
 } from 'lucide-react';
-import axios from 'axios';
+import axios from '@/config/axios';
 import { API_ENDPOINTS } from '../../config/api';
 
 const ResetPasswordPage = () => {
