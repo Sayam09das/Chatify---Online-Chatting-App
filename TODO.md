@@ -1,52 +1,29 @@
-# WhatsApp Clone Chat Area - Implementation Plan
+# TODO: WhatsApp-style Online Status & Last Seen Implementation
 
-## Status: ✅ COMPLETED
+## Phase 1: Backend - Socket.io Enhancement ✅
+- [x] 1. Update server.js - Add connected users tracking Map
+- [x] 2. Add socket events: addUser, removeUser, userStatusChange
+- [x] 3. Update database on connect/disconnect
+- [x] 4. Broadcast status changes to all clients
 
-## Completed Steps:
+## Phase 2: Backend - Users Routes ✅
+- [x] 5. Create users routes (GET /api/users)
+- [x] 6. Add endpoint to get user statuses
 
-### Step 1: ✅ Created WhatsApp-style ChatArea Component
-- Header with contact info, online status, call/video buttons
-- Messages area with:
-  - Sent messages (green bubbles, right-aligned)
-  - Received messages (white/dark bubbles, left-aligned)
-  - Timestamps and read receipts (check marks)
-  - Date separators
-  - Hover actions (reply, forward, copy)
-  - Voice message, image, and file message support
-- Input area with emoji button, attachment menu, text field, and voice message/send button
+## Phase 3: Frontend - Conversation.jsx ✅
+- [x] 7. Update to fetch user statuses from API
+- [x] 8. Listen for socket status changes
+- [x] 9. Pass lastSeen data to Sidebar
 
-### Step 2: ✅ Updated Conversation.jsx
-- Integrated Sidebar + ChatArea components
-- Connected with socket.io for real-time messaging
-- Added mobile responsive design
-- Implemented user authentication and chat management
+## Phase 4: Frontend - Sidebar.jsx ✅
+- [x] 10. Update to show formatted "last seen X" 
+- [x] 11. Accept lastSeen prop and display properly
 
-### Step 3: ✅ Created Video Call UI Component (Viedocall.jsx)
-- Incoming call screen with ringing animation
-- Active call screen with:
-  - Avatar display
-  - Mute/unmute button
-  - Video on/off toggle
-  - End call button
-  - Chat button
-  - Minimize/maximize functionality
-  - Call duration timer
+## Phase 5: Frontend - ChatArea.jsx ✅
+- [x] 12. Update ChatHeader to show proper last seen
+- [x] 13. Format last seen time (e.g., "last seen 5 min ago")
 
-### Step 4: ✅ Created Audio Call UI Component (Phonecall.jsx)
-- Incoming call screen with pulsing animation
-- Active call screen with:
-  - Avatar display with sound wave animation
-  - Mute/unmute button
-  - Speaker toggle
-  - End call button
-  - Pause/resume button
-  - Chat button
-  - Call duration timer
-  - HD quality indicator
-
-## Files Edited:
-1. `frontend/src/Whatsapp/ChatArea.jsx` - Created full WhatsApp-style chat area UI
-2. `frontend/src/components/Conversation/Conversation.jsx` - Integrated Sidebar + ChatArea with socket.io
-3. `frontend/src/Whatsapp/Viedocall.jsx` - Created Video Call UI
-4. `frontend/src/Whatsapp/Phonecall.jsx` - Created Audio Call UI
+## Phase 6: Testing
+- [ ] 14. Test online/offline status updates
+- [ ] 15. Test last seen time formatting
 

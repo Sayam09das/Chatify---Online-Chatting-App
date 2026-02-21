@@ -239,6 +239,19 @@ const Sidebar = ({
     // ── Chat item ─────────────────────────────────────────────────────────────────
     function ChatItem({ chat, index }) {
         const isActive = activeChat?._id === chat._id;
+        
+        // Get status text - show online or last seen
+        const getStatusText = () => {
+            if (chat.typing) {
+                return <span className="text-[#25d366] font-medium">typing…</span>;
+            }
+            if (chat.online) {
+                return <span className="text-[#25d366]">online</span>;
+            }
+            // Show last seen if available
+            return chat.lastSeenFormatted || 'offline';
+        };
+        
         return (
             <motion.div
                 key={chat._id}
@@ -271,7 +284,7 @@ const Sidebar = ({
                             {chat.typing ? (
                                 <span className="text-[#25d366] font-medium">typing…</span>
                             ) : (
-                                <span>{chat.lastMessage}</span>
+                                <span className="truncate">{chat.lastMessage}</span>
                             )}
                         </p>
                         <div className="flex items-center gap-1 flex-shrink-0">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import io from 'socket.io-client';
@@ -14,6 +14,31 @@ const socket = io(API_URL, {
     withCredentials: true,
     transports: ["websocket"],
 });
+
+// Helper to format last seen
+const formatLastSeen = (date) => {
+    if (!date) return 'unknown';
+    
+    const now = new Date();
+    const lastSeen = new Date(date);
+    const diffMs = now - lastSeen;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffSec < 60) return 'just now';
+    if (diffMin < 60) return `${diffMin} min ago`;
+    if (diffHour < 24) return `${diffHour} hour${diffHour > 1 ? 's' : ''} ago`;
+    if (diffDay === 1) return 'yesterday';
+    if (diffDay < 7) return `${diffDay} days ago`;
+    
+    return lastSeen.toLocaleDateString('en-US', { 
+        day: 'numeric', 
+        month: 'short',
+        year: lastSeen.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+};
 
 // Helper to get avatar URL
 const getAvatarUrl = (profileImage) => {
@@ -32,6 +57,7 @@ const Conversation = () => {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [userStatuses, setUserStatuses] = useState({});
 
     // Call states
     const [showVideoCall, setShowVideoCall] = useState(false);
@@ -87,7 +113,7 @@ const Conversation = () => {
             setCurrentUser(user);
             socket.emit('addUser', user._id);
 
-            // Fetch all users
+            // Fetch all users with their statuses
             try {
                 const res = await axios.post(
                     API_ENDPOINTS.getUsers,
@@ -98,17 +124,35 @@ const Conversation = () => {
                 const others = res.data.filter(u => u._id !== user._id);
                 setAllUsers(res.data);
 
+                // Create user statuses map
+                const statuses = {};
+                others.forEach(u => {
+                    statuses[u._id] = {
+                        isOnline: u.isOnline || false,
+                        lastSeen: u.lastSeen,
+                        lastSeenFormatted: u.lastSeenFormatted || formatLastSeen(u.lastSeen)
+                    };
+                });
+                setUserStatuses(statuses);
+
                 // Create chat list from other users
                 const chatsData = others
-                    .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                    .sort((a, b) => {
+                        // Sort by online status first, then by name
+                        if (a.isOnline && !b.isOnline) return -1;
+                        if (!a.isOnline && b.isOnline) return 1;
+                        return (a.fullName || a.username || '').localeCompare(b.fullName || b.username || '');
+                    })
                     .map(u => ({
                         _id: u._id,
-                        name: u.fullName,
+                        name: u.fullName || u.username,
                         avatar: getAvatarUrl(u.profileImage),
                         lastMessage: '',
                         unread: 0,
                         typing: false,
-                        online: false,
+                        online: u.isOnline || false,
+                        lastSeen: u.lastSeen,
+                        lastSeenFormatted: u.lastSeenFormatted || formatLastSeen(u.lastSeen),
                         time: '',
                         messages: [],
                     }));
@@ -116,7 +160,6 @@ const Conversation = () => {
                 setChats(chatsData);
             } catch (error) {
                 console.error('Failed to fetch users:', error);
-                // Don't block UI, just show empty chat list
             }
             
             setIsLoading(false);
@@ -127,6 +170,7 @@ const Conversation = () => {
 
     // Socket event listeners
     useEffect(() => {
+        // Handle receiving messages
         socket.on('receiveMessage', ({ chatId, message }) => {
             setChats(prevChats => {
                 const chatExists = prevChats.find(c => c._id === chatId);
@@ -141,15 +185,43 @@ const Conversation = () => {
             });
         });
 
+        // Handle user online
         socket.on('userOnline', ({ userId }) => {
+            setUserStatuses(prev => ({
+                ...prev,
+                [userId]: {
+                    ...prev[userId],
+                    isOnline: true
+                }
+            }));
             setChats(prevChats =>
-                prevChats.map(c => (c._id === userId ? { ...c, online: true } : c))
+                prevChats.map(c => 
+                    c._id === userId ? { ...c, online: true } : c
+                )
             );
         });
 
-        socket.on('userOffline', ({ userId }) => {
+        // Handle user offline
+        socket.on('userOffline', ({ userId, lastSeen }) => {
+            const formattedLastSeen = formatLastSeen(lastSeen);
+            setUserStatuses(prev => ({
+                ...prev,
+                [userId]: {
+                    ...prev[userId],
+                    isOnline: false,
+                    lastSeen: lastSeen,
+                    lastSeenFormatted: formattedLastSeen
+                }
+            }));
             setChats(prevChats =>
-                prevChats.map(c => (c._id === userId ? { ...c, online: false } : c))
+                prevChats.map(c => 
+                    c._id === userId ? { 
+                        ...c, 
+                        online: false,
+                        lastSeen: lastSeen,
+                        lastSeenFormatted: formattedLastSeen
+                    } : c
+                )
             );
         });
 
@@ -173,6 +245,23 @@ const Conversation = () => {
             setShowAudioCall(false);
         });
 
+        // Handle typing events
+        socket.on('userTyping', ({ userId, userName, chatId }) => {
+            setChats(prevChats =>
+                prevChats.map(c => 
+                    c._id === chatId ? { ...c, typing: true, typingName: userName } : c
+                )
+            );
+        });
+
+        socket.on('userStopTyping', ({ userId, chatId }) => {
+            setChats(prevChats =>
+                prevChats.map(c => 
+                    c._id === chatId ? { ...c, typing: false, typingName: null } : c
+                )
+            );
+        });
+
         return () => {
             socket.off('receiveMessage');
             socket.off('userOnline');
@@ -180,6 +269,8 @@ const Conversation = () => {
             socket.off('incomingCall');
             socket.off('callAccepted');
             socket.off('callDeclined');
+            socket.off('userTyping');
+            socket.off('userStopTyping');
         };
     }, []);
 
@@ -200,18 +291,24 @@ const Conversation = () => {
         }
 
         const existingChat = chats.find(c => c._id === user._id);
+        const userStatus = userStatuses[user._id] || { 
+            isOnline: false, 
+            lastSeenFormatted: formatLastSeen(user.lastSeen) 
+        };
 
         if (existingChat) {
             setActiveChat(existingChat);
         } else {
             const newChat = {
                 _id: user._id,
-                name: user.fullName,
+                name: user.fullName || user.username,
                 avatar: getAvatarUrl(user.profileImage),
                 lastMessage: '',
                 unread: 0,
                 typing: false,
-                online: false,
+                online: userStatus.isOnline,
+                lastSeen: userStatus.lastSeen,
+                lastSeenFormatted: userStatus.lastSeenFormatted,
                 time: '',
                 messages: [],
             };
@@ -271,6 +368,24 @@ const Conversation = () => {
         });
     };
 
+    // Handle typing
+    const handleTyping = (isTyping) => {
+        if (!activeChat) return;
+        
+        if (isTyping) {
+            socket.emit('typing', {
+                chatId: activeChat._id,
+                userId: currentUser._id,
+                userName: currentUser.fullName
+            });
+        } else {
+            socket.emit('stopTyping', {
+                chatId: activeChat._id,
+                userId: currentUser._id
+            });
+        }
+    };
+
     // Handle back button on mobile
     const handleBack = () => {
         setShowSidebar(true);
@@ -298,7 +413,6 @@ const Conversation = () => {
             return;
         }
         
-        // Emit call event to server
         socket.emit('initiateCall', {
             calleeId: activeChat._id,
             type,
@@ -415,6 +529,7 @@ const Conversation = () => {
                     messages={activeMessages}
                     currentUser={currentUser}
                     onSendMessage={handleSendMessage}
+                    onTyping={handleTyping}
                     onBack={handleBack}
                     onCall={() => handleCall('audio')}
                     onVideoCall={() => handleCall('video')}

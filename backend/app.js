@@ -67,6 +67,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/users', require('./routes/users.routes'));
 
 // API routes placeholder
 // app.use('/api/users', require('./routes/users'));

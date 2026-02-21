@@ -8,9 +8,34 @@ import {
     MessageCircle
 } from 'lucide-react';
 
+// Helper to format last seen
+const formatLastSeen = (date) => {
+    if (!date) return 'unknown';
+    
+    const now = new Date();
+    const lastSeen = new Date(date);
+    const diffMs = now - lastSeen;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffSec < 60) return 'just now';
+    if (diffMin < 60) return `${diffMin} min ago`;
+    if (diffHour < 24) return `${diffHour} hour${diffHour > 1 ? 's' : ''} ago`;
+    if (diffDay === 1) return 'yesterday';
+    if (diffDay < 7) return `${diffDay} days ago`;
+    
+    return lastSeen.toLocaleDateString('en-US', { 
+        day: 'numeric', 
+        month: 'short',
+        year: lastSeen.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+};
+
 // ─── Avatar Color Generator ───────────────────────────────────────────────────
 const AVATAR_COLORS = [
-    ['#1a1a2e', '#e94560'], ['#0f3460', '#53d8fb'], ['#16213e', '#f5a623'],
+    ['#1a1a2e', '#e94560'], ['#0f3460', '#53b8fb'], ['#16213e', '#f5a623'],
     ['#1b4332', '#40916c'], ['#3d0066', '#c77dff'], ['#7b2d00', '#ff9a3c'],
     ['#0d1b2a', '#e0fbfc'], ['#2d1b69', '#ff6584'],
 ];
@@ -198,6 +223,11 @@ function DateSeparator({ date }) {
 function ChatHeader({ chat, onBack, onCall, onVideoCall }) {
     if (!chat) return null;
 
+    // Get the last seen formatted text
+    const lastSeenText = chat.online 
+        ? 'online' 
+        : (chat.lastSeenFormatted || formatLastSeen(chat.lastSeen) || 'offline');
+
     return (
         <div className="flex items-center justify-between px-4 py-3" style={{ background: '#202c33' }}>
             <div className="flex items-center gap-3">
@@ -210,10 +240,8 @@ function ChatHeader({ chat, onBack, onCall, onVideoCall }) {
                     <p className="text-[#8696a0] text-xs">
                         {chat.typing ? (
                             <span className="text-[#25d366]">typing...</span>
-                        ) : chat.online ? (
-                            'online'
                         ) : (
-                            'last seen recently'
+                            <span>{lastSeenText}</span>
                         )}
                     </p>
                 </div>
@@ -237,15 +265,49 @@ function ChatHeader({ chat, onBack, onCall, onVideoCall }) {
 }
 
 // ─── Message Input ──────────────────────────────────────────────────────────────
-function MessageInput({ value, onChange, onSend, onEmojiToggle, onAttachToggle, isRecording, recordingTime, onStartRecording, onStopRecording }) {
+function MessageInput({ value, onChange, onSend, onEmojiToggle, onAttachToggle, onTyping, isRecording, recordingTime, onStartRecording, onStopRecording }) {
     const inputRef = useRef(null);
     const [showAttachMenu, setShowAttachMenu] = useState(false);
+    const typingTimeoutRef = useRef(null);
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             onSend();
         }
+    };
+
+    const handleChange = (e) => {
+        const text = e.target.value;
+        onChange(text);
+        
+        // Handle typing indicator
+        if (onTyping && text.length > 0) {
+            onTyping(true);
+            
+            // Clear previous timeout
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+            }
+            
+            // Stop typing after 2 seconds of no input
+            typingTimeoutRef.current = setTimeout(() => {
+                onTyping(false);
+            }, 2000);
+        } else if (onTyping) {
+            onTyping(false);
+        }
+    };
+
+    const handleSend = () => {
+        // Stop typing indicator
+        if (onTyping) {
+            onTyping(false);
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+            }
+        }
+        onSend();
     };
 
     const formatTime = (seconds) => {
@@ -325,7 +387,7 @@ function MessageInput({ value, onChange, onSend, onEmojiToggle, onAttachToggle, 
                             ref={inputRef}
                             type="text"
                             value={value}
-                            onChange={(e) => onChange(e.target.value)}
+                            onChange={handleChange}
                             onKeyPress={handleKeyPress}
                             placeholder="Type a message"
                             className="w-full px-4 py-2.5 rounded-full bg-[#2a3942] text-[#e9edef] placeholder-[#8696a0] text-sm outline-none focus:ring-1 focus:ring-[#25d366]"
@@ -343,7 +405,7 @@ function MessageInput({ value, onChange, onSend, onEmojiToggle, onAttachToggle, 
                     </button>
                 ) : value.trim() ? (
                     <button
-                        onClick={onSend}
+                        onClick={handleSend}
                         className="p-3 bg-[#25d366] hover:bg-[#20bd5a] rounded-full text-[#111b21] transition-colors"
                     >
                         <Send size={20} />
@@ -377,6 +439,7 @@ const ChatArea = ({
     messages = [],
     currentUser,
     onSendMessage,
+    onTyping,
     onBack,
     onCall,
     onVideoCall,
@@ -421,7 +484,6 @@ const ChatArea = ({
 
     const handleStopRecording = () => {
         setIsRecording(false);
-        // In a real app, you would upload the voice message here
     };
 
     // Group messages by date
@@ -500,6 +562,7 @@ const ChatArea = ({
                 onSend={handleSend}
                 onEmojiToggle={onEmojiToggle}
                 onAttachToggle={onAttachToggle}
+                onTyping={onTyping}
                 isRecording={isRecording}
                 recordingTime={recordingTime}
                 onStartRecording={handleStartRecording}
