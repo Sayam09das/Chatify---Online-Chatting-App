@@ -127,7 +127,7 @@ const GetStarted = () => {
                   transition={{ duration: 0.8, delay: 0.7 }}
                 >
                   <motion.a
-                    href="/auth/login"
+                    href="/login"
                     className="group inline-flex items-center justify-center px-8 py-4 bg-white text-green-600 rounded-full font-bold text-lg shadow-lg hover:shadow-xl transition-all duration-300"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -492,7 +492,7 @@ const GetStarted = () => {
               transition={{ delay: 0.4 }}
             >
               <motion.a
-                href="/auth/login"
+                href="/login"
                 className="inline-flex items-center px-8 py-4 bg-white text-green-600 rounded-full font-bold text-lg shadow-lg hover:shadow-xl transition-all duration-300"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
