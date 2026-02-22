@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from '@/config/axios';
 import io from 'socket.io-client';
-import { v4 as uuidv4 } from 'uuid';
 import Sidebar from '@/Whatsapp/Sidebar';
 import ChatArea from '@/Whatsapp/ChatArea';
 import VideoCall from '@/Whatsapp/Viedocall';
@@ -63,6 +62,28 @@ const Conversation = () => {
     const [showVideoCall, setShowVideoCall] = useState(false);
     const [showAudioCall, setShowAudioCall] = useState(false);
     const [incomingCall, setIncomingCall] = useState(null);
+
+    const loadMessagesForChat = async (otherUserId) => {
+        try {
+            const response = await axios.get(`${API_ENDPOINTS.getMessages}/${otherUserId}`);
+            const messages = response.data?.messages || [];
+
+            setChats(prevChats =>
+                prevChats.map(c =>
+                    c._id === otherUserId
+                        ? {
+                            ...c,
+                            messages,
+                            lastMessage: messages.length ? messages[messages.length - 1].text : c.lastMessage,
+                            time: messages.length ? 'now' : c.time,
+                        }
+                        : c
+                )
+            );
+        } catch (err) {
+            console.error('Failed to load chat messages:', err);
+        }
+    };
 
     // Check for mobile on resize
     useEffect(() => {
@@ -313,56 +334,53 @@ const Conversation = () => {
             setActiveChat(newChat);
         }
 
+        loadMessagesForChat(user._id);
+
         if (isMobile) setShowSidebar(false);
     };
 
     // Handle selecting a chat
     const handleSelectChat = (chat) => {
         setActiveChat(chat);
+        loadMessagesForChat(chat._id);
         if (isMobile) setShowSidebar(false);
     };
 
     // Handle sending a message
-    const handleSendMessage = (text) => {
+    const handleSendMessage = async (text) => {
         if (!activeChat || !text.trim()) return;
+        try {
+            const response = await axios.post(API_ENDPOINTS.sendMessage, {
+                receiver: activeChat._id,
+                text: text.trim(),
+            });
 
-        const messageObj = {
-            text: text.trim(),
-            sender: currentUser._id,
-            receiver: activeChat._id,
-            timestamp: new Date().toISOString(),
-        };
+            const savedMessage = response.data?.message;
+            if (!savedMessage) return;
 
-        const newMessage = {
-            _id: uuidv4(),
-            ...messageObj,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: 'sent',
-            senderName: currentUser.fullName,
-        };
+            setChats(prevChats =>
+                prevChats.map(c =>
+                    c._id === activeChat._id
+                        ? { ...c, messages: [...c.messages, savedMessage], lastMessage: savedMessage.text, time: 'now' }
+                        : c
+                )
+            );
 
-        // Update local state immediately
-        setChats(prevChats =>
-            prevChats.map(c =>
-                c._id === activeChat._id
-                    ? { ...c, messages: [...c.messages, newMessage], lastMessage: text.trim(), time: 'now' }
-                    : c
-            )
-        );
+            setActiveChat(prev => ({
+                ...prev,
+                messages: [...(prev?.messages || []), savedMessage],
+                lastMessage: savedMessage.text,
+                time: 'now',
+            }));
 
-        // Update active chat
-        setActiveChat(prev => ({
-            ...prev,
-            messages: [...prev.messages, newMessage],
-            lastMessage: text.trim(),
-            time: 'now',
-        }));
-
-        // Send via socket
-        socket.emit('sendMessage', {
-            chatId: activeChat._id,
-            message: messageObj,
-        });
+            socket.emit('sendMessage', {
+                chatId: activeChat._id,
+                message: savedMessage,
+            });
+        } catch (err) {
+            console.error('Failed to send message:', err);
+            showNotification('Failed to send message', 'error');
+        }
     };
 
     // Handle typing

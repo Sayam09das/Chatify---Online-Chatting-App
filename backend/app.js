@@ -70,10 +70,10 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/users', require('./routes/users.routes'));
+app.use('/api/messages', require('./routes/messages.routes'));
 
 // API routes placeholder
 // app.use('/api/users', require('./routes/users'));
-// app.use('/api/messages', require('./routes/messages'));
 // app.use('/api/conversations', require('./routes/conversations'));
 
 // 404 handler

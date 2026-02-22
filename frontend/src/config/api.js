@@ -23,6 +23,10 @@ export const API_ENDPOINTS = {
   getUsers: `${API_URL}/api/users`,
   getUserStatus: `${API_URL}/api/users/status`,
   search: `${API_URL}/api/search`,
+
+  // Message endpoints
+  getMessages: `${API_URL}/api/messages`,
+  sendMessage: `${API_URL}/api/messages`,
   
   // Socket.io
   socketUrl: API_URL,
