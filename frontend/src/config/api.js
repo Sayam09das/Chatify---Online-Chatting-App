@@ -1,7 +1,9 @@
 // Centralized API configuration
 // Use import.meta.env.VITE_API_URL for the backend URL
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_HOST = import.meta.env.VITE_API_HOST || 'http://localhost';
+const API_PORT = import.meta.env.VITE_API_PORT || '3000';
+const API_URL = import.meta.env.VITE_API_URL || `${API_HOST}:${API_PORT}`;
 
 export const API_ENDPOINTS = {
   // Auth endpoints
@@ -27,4 +29,3 @@ export const API_ENDPOINTS = {
 };
 
 export default API_URL;
-

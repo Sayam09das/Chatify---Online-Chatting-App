@@ -5,6 +5,8 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
+const backendPort = process.env.PORT || '3000';
+const frontendDevPort = process.env.FRONTEND_DEV_PORT || '5173';
 
 // Security middleware (disabled for development)
 // app.use(helmet());
@@ -17,10 +19,10 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps or curl requests)
     // Also allow localhost and vercel preview URLs
     const allowedOrigins = [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:3000',
+      `http://localhost:${frontendDevPort}`,
+      `http://localhost:${backendPort}`,
+      `http://127.0.0.1:${frontendDevPort}`,
+      `http://127.0.0.1:${backendPort}`,
     ];
     
     // Add Vercel preview domains if present
@@ -89,4 +91,3 @@ app.use((err, req, res, next) => {
 });
 
 module.exports = app;
-
