@@ -22,14 +22,18 @@ const VideoCall = ({
   const remoteVideoRef = useRef(null);
 
   useEffect(() => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStream || null;
+    if (remoteVideoRef.current && remoteStream) {
+      console.log('🎥 Attaching remote stream to video element');
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(e => console.warn('Remote video play failed:', e));
     }
   }, [remoteStream]);
 
   useEffect(() => {
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = localStream || null;
+    if (localVideoRef.current && localStream) {
+      console.log('📹 Attaching local stream to video element');
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(e => console.warn('Local video play failed:', e));
     }
   }, [localStream]);
 
@@ -77,7 +81,12 @@ const VideoCall = ({
 
       <div className="w-full h-full">
         {remoteStream ? (
-          <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+          <video 
+            ref={remoteVideoRef} 
+            autoPlay 
+            playsInline 
+            className="w-full h-full object-cover"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-white/80 text-xl">
             {callStatus === 'connecting' ? 'Waiting for peer video...' : displayName}
@@ -87,7 +96,13 @@ const VideoCall = ({
 
       <div className="absolute right-4 bottom-24 w-40 h-56 rounded-lg overflow-hidden border border-white/20 bg-black/40">
         {localStream && !isVideoOff ? (
-          <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+          <video 
+            ref={localVideoRef} 
+            autoPlay 
+            muted 
+            playsInline 
+            className="w-full h-full object-cover mirror"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-white/80 text-sm">Camera off</div>
         )}

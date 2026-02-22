@@ -240,6 +240,14 @@ io.on('connection', (socket) => {
       from: socket.userId,
     });
   });
+  socket.on('offer', ({ callId, offer } = {}) => {
+    if (!callId || !offer) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    if (socket.userId !== call.callerId) return;
+    if (call.status !== 'accepted' && call.status !== 'in_call') return;
+    io.to(`user_${call.calleeId}`).emit('offer', { callId, offer, from: socket.userId });
+  });
 
   // WebRTC answer relay
   socket.on('webrtc-answer', ({ callId, answer } = {}) => {
@@ -259,6 +267,16 @@ io.on('connection', (socket) => {
       from: socket.userId,
     });
   });
+  socket.on('answer', ({ callId, answer } = {}) => {
+    if (!callId || !answer) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    if (socket.userId !== call.calleeId) return;
+    if (call.status !== 'accepted' && call.status !== 'in_call') return;
+    call.status = 'in_call';
+    activeCalls.set(callId, call);
+    io.to(`user_${call.callerId}`).emit('answer', { callId, answer, from: socket.userId });
+  });
 
   // WebRTC ICE relay
   socket.on('webrtc-ice-candidate', ({ callId, candidate } = {}) => {
@@ -271,6 +289,19 @@ io.on('connection', (socket) => {
     if (!targetUserId) return;
 
     io.to(`user_${targetUserId}`).emit('webrtc-ice-candidate', {
+      callId,
+      candidate,
+      from: socket.userId,
+    });
+  });
+  socket.on('ice-candidate', ({ callId, candidate } = {}) => {
+    if (!callId || !candidate) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    if (socket.userId !== call.callerId && socket.userId !== call.calleeId) return;
+    if (call.status !== 'accepted' && call.status !== 'in_call') return;
+    const targetUserId = socket.userId === call.callerId ? call.calleeId : call.callerId;
+    io.to(`user_${targetUserId}`).emit('ice-candidate', {
       callId,
       candidate,
       from: socket.userId,

@@ -89,6 +89,8 @@ const Conversation = () => {
   } = useCallStore();
 
   const chatsRef = useRef([]);
+  const activeChatIdRef = useRef(null);
+  const callSnapshotRef = useRef({ callId: null, callState: 'idle', callType: null, isIncoming: false, isOutgoing: false });
   const typingTimeoutsRef = useRef(new Map());
   const receivedMessageIdsRef = useRef(new Set());
   const notifiedMessageIdsRef = useRef(new Set());
@@ -101,6 +103,14 @@ const Conversation = () => {
   useEffect(() => {
     chatsRef.current = chats;
   }, [chats]);
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
+
+  useEffect(() => {
+    callSnapshotRef.current = { callId, callState, callType, isIncoming, isOutgoing };
+  }, [callId, callState, callType, isIncoming, isOutgoing]);
 
   useEffect(() => {
     const totalUnread = Object.values(unreadByChat).reduce((sum, n) => sum + (n || 0), 0);
@@ -222,6 +232,10 @@ const Conversation = () => {
         callId: activeCallId,
         candidate: event.candidate,
       });
+      socket.emit('ice-candidate', {
+        callId: activeCallId,
+        candidate: event.candidate,
+      });
     };
 
     pc.ontrack = (event) => {
@@ -233,10 +247,19 @@ const Conversation = () => {
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
+      console.log('[WebRTC] connectionState:', state);
       if (state === 'failed' || state === 'disconnected' || state === 'closed') {
         cleanupMediaAndPeer();
         clearCall();
       }
+    };
+
+    pc.onsignalingstatechange = () => {
+      console.log('[WebRTC] signalingState:', pc.signalingState);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('[WebRTC] iceConnectionState:', pc.iceConnectionState);
     };
 
     peerConnectionRef.current = pc;
@@ -264,6 +287,8 @@ const Conversation = () => {
     }
 
     if (nextType === 'answer') {
+      // Prevent "Called in wrong state: stable" and duplicate answer application
+      if (pc.signalingState === 'stable') return false;
       if (pc.signalingState !== 'have-local-offer') return false;
     }
 
@@ -320,6 +345,32 @@ const Conversation = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!currentUser?._id) return;
+
+    const onConnect = () => {
+      socket.emit('addUser', currentUser._id);
+    };
+
+    const onDisconnect = () => {
+      showNotification('Network disconnected', 'error');
+      if (useCallStore.getState().callState !== 'idle') {
+        cleanupMediaAndPeer();
+        clearCall();
+      }
+    };
+
+    socket.off('connect', onConnect);
+    socket.off('disconnect', onDisconnect);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, [currentUser?._id]);
 
   useEffect(() => {
     const initializeUser = async () => {
@@ -430,7 +481,7 @@ const Conversation = () => {
         )
       );
 
-      if (activeChatId !== chatId) {
+      if (activeChatIdRef.current !== chatId) {
         incrementUnread(chatId);
         const senderName = chatsRef.current.find((c) => c._id === chatId)?.name || 'New message';
         showNotification(`${senderName}: ${formatted.text || 'sent a message'}`, 'success');
@@ -439,14 +490,14 @@ const Conversation = () => {
     };
 
     const onMessageNotification = ({ chatId, messageId, text }) => {
-      if (!messageId || notifiedMessageIdsRef.current.has(messageId) || activeChatId === chatId) return;
+      if (!messageId || notifiedMessageIdsRef.current.has(messageId) || activeChatIdRef.current === chatId) return;
       notifiedMessageIdsRef.current.add(messageId);
       const senderName = chatsRef.current.find((c) => c._id === chatId)?.name || 'New message';
       showNotification(`${senderName}: ${text || 'sent a message'}`, 'success');
     };
 
     const onIncomingCall = ({ callId: incomingCallId, caller, type }) => {
-      const state = useCallStore.getState();
+      const state = callSnapshotRef.current;
       if (state.callState !== 'idle' && state.callId && state.callId !== incomingCallId) {
         socket.emit('declineCall', { callId: incomingCallId });
         return;
@@ -462,7 +513,7 @@ const Conversation = () => {
     };
 
     const onCallAccepted = async ({ callId: acceptedCallId }) => {
-      const state = useCallStore.getState();
+      const state = callSnapshotRef.current;
       if (state.callId && state.callId !== acceptedCallId) return;
       patchCall({ callId: acceptedCallId, callState: 'connecting', isIncoming: false });
 
@@ -473,7 +524,9 @@ const Conversation = () => {
         attachLocalTracks(pc, stream);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        console.log('[WebRTC] local offer created, signalingState:', pc.signalingState);
         socket.emit('webrtc-offer', { callId: acceptedCallId, offer });
+        socket.emit('offer', { callId: acceptedCallId, offer });
       } catch (err) {
         console.error('Offer creation failed:', err);
         socket.emit('endCall', { callId: acceptedCallId });
@@ -483,7 +536,7 @@ const Conversation = () => {
     };
 
     const onCallDeclined = ({ callId: declinedCallId }) => {
-      const state = useCallStore.getState();
+      const state = callSnapshotRef.current;
       if (state.callId && declinedCallId && state.callId !== declinedCallId) return;
       showNotification('Call declined', 'error');
       cleanupMediaAndPeer();
@@ -491,7 +544,7 @@ const Conversation = () => {
     };
 
     const onCallEnded = ({ callId: endedCallId }) => {
-      const state = useCallStore.getState();
+      const state = callSnapshotRef.current;
       if (state.callId && endedCallId && state.callId !== endedCallId) return;
       showNotification('Call ended', 'error');
       cleanupMediaAndPeer();
@@ -505,7 +558,7 @@ const Conversation = () => {
     };
 
     const onOffer = async ({ callId: incomingCallId, offer }) => {
-      const state = useCallStore.getState();
+      const state = callSnapshotRef.current;
       if (state.callId !== incomingCallId) return;
 
       try {
@@ -514,11 +567,14 @@ const Conversation = () => {
         attachLocalTracks(pc, stream);
         const applied = await safeSetRemoteDescription(pc, offer);
         if (!applied) return;
+        console.log('[WebRTC] remote offer applied, signalingState:', pc.signalingState);
         await applyPendingCandidates(pc);
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
+        console.log('[WebRTC] local answer created, signalingState:', pc.signalingState);
         socket.emit('webrtc-answer', { callId: incomingCallId, answer });
+        socket.emit('answer', { callId: incomingCallId, answer });
         patchCall({ callState: 'in_call', startedAt: Date.now() });
       } catch (err) {
         console.error('Offer handling failed:', err);
@@ -526,16 +582,18 @@ const Conversation = () => {
     };
 
     const onAnswer = async ({ callId: answerCallId, answer }) => {
-      const state = useCallStore.getState();
+      const state = callSnapshotRef.current;
       const pc = peerConnectionRef.current;
       if (!pc || state.callId !== answerCallId) return;
       if (handledAnswerCallIdsRef.current.has(answerCallId)) return;
+      if (pc.signalingState === 'stable') return;
       if (pc.signalingState !== 'have-local-offer') return;
 
       try {
         const applied = await safeSetRemoteDescription(pc, answer);
         if (!applied) return;
         handledAnswerCallIdsRef.current.add(answerCallId);
+        console.log('[WebRTC] remote answer applied, signalingState:', pc.signalingState);
         await applyPendingCandidates(pc);
         patchCall({ callState: 'in_call', startedAt: Date.now() });
       } catch (err) {
@@ -544,7 +602,7 @@ const Conversation = () => {
     };
 
     const onIceCandidate = async ({ callId: candidateCallId, candidate }) => {
-      const state = useCallStore.getState();
+      const state = callSnapshotRef.current;
       const pc = peerConnectionRef.current;
       if (!candidate || state.callId !== candidateCallId) return;
       if (!pc || !pc.remoteDescription) {
@@ -604,6 +662,9 @@ const Conversation = () => {
     socket.off('webrtc-offer');
     socket.off('webrtc-answer');
     socket.off('webrtc-ice-candidate');
+    socket.off('offer');
+    socket.off('answer');
+    socket.off('ice-candidate');
     socket.off('userOnline');
     socket.off('userOffline');
     socket.off('userTyping');
@@ -620,6 +681,9 @@ const Conversation = () => {
     socket.on('webrtc-offer', onOffer);
     socket.on('webrtc-answer', onAnswer);
     socket.on('webrtc-ice-candidate', onIceCandidate);
+    socket.on('offer', onOffer);
+    socket.on('answer', onAnswer);
+    socket.on('ice-candidate', onIceCandidate);
     socket.on('userOnline', onUserOnline);
     socket.on('userOffline', onUserOffline);
     socket.on('userTyping', onUserTyping);
@@ -637,12 +701,15 @@ const Conversation = () => {
       socket.off('webrtc-offer', onOffer);
       socket.off('webrtc-answer', onAnswer);
       socket.off('webrtc-ice-candidate', onIceCandidate);
+      socket.off('offer', onOffer);
+      socket.off('answer', onAnswer);
+      socket.off('ice-candidate', onIceCandidate);
       socket.off('userOnline', onUserOnline);
       socket.off('userOffline', onUserOffline);
       socket.off('userTyping', onUserTyping);
       socket.off('userStopTyping', onUserStopTyping);
     };
-  }, [activeChatId, callId, callState, clearCall, incrementUnread, patchCall, resetUnread, setIncomingCall, setLocalStream, setRemoteStream]);
+  }, []);
 
   useEffect(() => {
     return () => {
