@@ -229,6 +229,8 @@ io.on('connection', (socket) => {
     if (!callId || !offer) return;
     const call = activeCalls.get(callId);
     if (!call) return;
+    if (socket.userId !== call.callerId) return;
+    if (call.status !== 'accepted' && call.status !== 'in_call') return;
     const targetUserId = socket.userId === call.callerId ? call.calleeId : call.callerId;
     if (!targetUserId) return;
 
@@ -244,6 +246,10 @@ io.on('connection', (socket) => {
     if (!callId || !answer) return;
     const call = activeCalls.get(callId);
     if (!call) return;
+    if (socket.userId !== call.calleeId) return;
+    if (call.status !== 'accepted' && call.status !== 'in_call') return;
+    call.status = 'in_call';
+    activeCalls.set(callId, call);
     const targetUserId = socket.userId === call.callerId ? call.calleeId : call.callerId;
     if (!targetUserId) return;
 
@@ -259,6 +265,8 @@ io.on('connection', (socket) => {
     if (!callId || !candidate) return;
     const call = activeCalls.get(callId);
     if (!call) return;
+    if (socket.userId !== call.callerId && socket.userId !== call.calleeId) return;
+    if (call.status !== 'accepted' && call.status !== 'in_call') return;
     const targetUserId = socket.userId === call.callerId ? call.calleeId : call.callerId;
     if (!targetUserId) return;
 
