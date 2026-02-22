@@ -62,11 +62,16 @@ const Conversation = () => {
     const [showVideoCall, setShowVideoCall] = useState(false);
     const [showAudioCall, setShowAudioCall] = useState(false);
     const [incomingCall, setIncomingCall] = useState(null);
+    const [currentCallId, setCurrentCallId] = useState(null);
 
     const loadMessagesForChat = async (otherUserId) => {
         try {
             const response = await axios.get(`${API_ENDPOINTS.getMessages}/${otherUserId}`);
-            const messages = response.data?.messages || [];
+            const messages = (response.data?.messages || []).map((m) => ({
+                ...m,
+                time: new Date(m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: 'delivered',
+            }));
 
             setChats(prevChats =>
                 prevChats.map(c =>
@@ -188,14 +193,28 @@ const Conversation = () => {
 
     // Socket event listeners
     useEffect(() => {
+        const activeChatId = activeChat?._id;
+
         // Handle receiving messages
         socket.on('receiveMessage', ({ chatId, message }) => {
+            const formattedMessage = {
+                ...message,
+                time: new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: 'delivered',
+            };
+
             setChats(prevChats => {
                 const chatExists = prevChats.find(c => c._id === chatId);
                 if (chatExists) {
                     return prevChats.map(c =>
                         c._id === chatId
-                            ? { ...c, messages: [...c.messages, message], lastMessage: message.text, time: 'now' }
+                            ? {
+                                ...c,
+                                messages: [...c.messages, formattedMessage],
+                                lastMessage: formattedMessage.text,
+                                time: 'now',
+                                unread: activeChatId === chatId ? c.unread : (c.unread || 0) + 1,
+                            }
                             : c
                     );
                 }
@@ -246,6 +265,7 @@ const Conversation = () => {
         // Handle incoming calls
         socket.on('incomingCall', ({ callId, caller, type }) => {
             setIncomingCall({ callId, caller, type });
+            setCurrentCallId(callId);
             if (type === 'video') {
                 setShowVideoCall(true);
             } else {
@@ -253,7 +273,13 @@ const Conversation = () => {
             }
         });
 
+        socket.on('callRinging', ({ callId }) => {
+            setCurrentCallId(callId);
+            showNotification('Ringing...', 'success');
+        });
+
         socket.on('callAccepted', ({ callId }) => {
+            setCurrentCallId(callId);
             showNotification('Call accepted!', 'success');
         });
 
@@ -261,6 +287,14 @@ const Conversation = () => {
             showNotification('Call declined', 'error');
             setShowVideoCall(false);
             setShowAudioCall(false);
+            setCurrentCallId(null);
+        });
+
+        socket.on('callEnded', () => {
+            showNotification('Call ended', 'error');
+            setShowVideoCall(false);
+            setShowAudioCall(false);
+            setCurrentCallId(null);
         });
 
         // Handle typing events
@@ -270,6 +304,11 @@ const Conversation = () => {
                     c._id === chatId ? { ...c, typing: true, typingName: userName } : c
                 )
             );
+            setActiveChat(prev => (
+                prev && prev._id === chatId
+                    ? { ...prev, typing: true, typingName: userName }
+                    : prev
+            ));
         });
 
         socket.on('userStopTyping', ({ userId, chatId }) => {
@@ -278,6 +317,11 @@ const Conversation = () => {
                     c._id === chatId ? { ...c, typing: false, typingName: null } : c
                 )
             );
+            setActiveChat(prev => (
+                prev && prev._id === chatId
+                    ? { ...prev, typing: false, typingName: null }
+                    : prev
+            ));
         });
 
         return () => {
@@ -285,12 +329,14 @@ const Conversation = () => {
             socket.off('userOnline');
             socket.off('userOffline');
             socket.off('incomingCall');
+            socket.off('callRinging');
             socket.off('callAccepted');
             socket.off('callDeclined');
+            socket.off('callEnded');
             socket.off('userTyping');
             socket.off('userStopTyping');
         };
-    }, []);
+    }, [activeChat?._id]);
 
     // Notification helper
     const showNotification = (message, type = 'success') => {
@@ -315,7 +361,8 @@ const Conversation = () => {
         };
 
         if (existingChat) {
-            setActiveChat(existingChat);
+            setChats(prevChats => prevChats.map(c => c._id === user._id ? { ...c, unread: 0 } : c));
+            setActiveChat({ ...existingChat, unread: 0 });
         } else {
             const newChat = {
                 _id: user._id,
@@ -341,7 +388,8 @@ const Conversation = () => {
 
     // Handle selecting a chat
     const handleSelectChat = (chat) => {
-        setActiveChat(chat);
+        setChats(prevChats => prevChats.map(c => c._id === chat._id ? { ...c, unread: 0 } : c));
+        setActiveChat({ ...chat, unread: 0 });
         loadMessagesForChat(chat._id);
         if (isMobile) setShowSidebar(false);
     };
@@ -391,7 +439,7 @@ const Conversation = () => {
             socket.emit('typing', {
                 chatId: activeChat._id,
                 userId: currentUser._id,
-                userName: currentUser.fullName
+                userName: currentUser.fullName || currentUser.username || 'User'
             });
         } else {
             socket.emit('stopTyping', {
@@ -452,12 +500,17 @@ const Conversation = () => {
         setIncomingCall(null);
         setShowVideoCall(false);
         setShowAudioCall(false);
+        setCurrentCallId(null);
     };
 
     const handleEndCall = () => {
+        if (currentCallId) {
+            socket.emit('endCall', { callId: currentCallId });
+        }
         setShowVideoCall(false);
         setShowAudioCall(false);
         setIncomingCall(null);
+        setCurrentCallId(null);
     };
 
     // Get current chat messages

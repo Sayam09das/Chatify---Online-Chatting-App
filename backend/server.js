@@ -1,6 +1,7 @@
 const app = require('./app');
 const http = require('http');
 const { Server } = require('socket.io');
+const { randomUUID } = require('crypto');
 const mongoose = require('mongoose');
 const User = require('./models/User');
 require('dotenv').config();
@@ -21,6 +22,7 @@ const io = new Server(server, {
 
 // Track connected users: Map<userId, socketId>
 const connectedUsers = new Map();
+const activeCalls = new Map(); // Map<callId, { callerId, calleeId, type }>
 
 // Helper to format last seen
 const formatLastSeen = (date) => {
@@ -109,6 +111,63 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Handle call initiation
+  socket.on('initiateCall', (data) => {
+    const { calleeId, type, caller } = data || {};
+    const callerId = socket.userId;
+    if (!callerId || !calleeId || !type) return;
+
+    const callId = randomUUID();
+    activeCalls.set(callId, { callerId, calleeId, type });
+
+    io.to(`user_${calleeId}`).emit('incomingCall', {
+      callId,
+      caller: {
+        _id: caller?._id || callerId,
+        name: caller?.fullName || caller?.username || caller?.name || 'Unknown',
+        fullName: caller?.fullName || caller?.name || 'Unknown',
+        username: caller?.username || '',
+        profileImage: caller?.profileImage || '',
+      },
+      type,
+    });
+
+    // Let caller know call is ringing
+    io.to(`user_${callerId}`).emit('callRinging', { callId, calleeId, type });
+  });
+
+  // Handle call accepted
+  socket.on('acceptCall', ({ callId } = {}) => {
+    if (!callId) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+
+    io.to(`user_${call.callerId}`).emit('callAccepted', { callId, by: call.calleeId });
+    io.to(`user_${call.calleeId}`).emit('callAccepted', { callId, by: call.calleeId });
+  });
+
+  // Handle call declined
+  socket.on('declineCall', ({ callId } = {}) => {
+    if (!callId) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+
+    io.to(`user_${call.callerId}`).emit('callDeclined', { callId, by: call.calleeId });
+    io.to(`user_${call.calleeId}`).emit('callDeclined', { callId, by: call.calleeId });
+    activeCalls.delete(callId);
+  });
+
+  // Handle call end
+  socket.on('endCall', ({ callId } = {}) => {
+    if (!callId) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+
+    io.to(`user_${call.callerId}`).emit('callEnded', { callId });
+    io.to(`user_${call.calleeId}`).emit('callEnded', { callId });
+    activeCalls.delete(callId);
+  });
+
   // Handle typing indicator
   socket.on('typing', (data) => {
     const { chatId, userId, userName } = data || {};
@@ -179,6 +238,15 @@ io.on('connection', (socket) => {
     const userId = socket.userId;
     
     if (userId) {
+      // End any active calls for disconnected user
+      for (const [callId, call] of activeCalls.entries()) {
+        if (call.callerId === userId || call.calleeId === userId) {
+          const otherUserId = call.callerId === userId ? call.calleeId : call.callerId;
+          io.to(`user_${otherUserId}`).emit('callEnded', { callId });
+          activeCalls.delete(callId);
+        }
+      }
+
       // Remove from connected users
       connectedUsers.delete(userId);
       
