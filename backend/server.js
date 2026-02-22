@@ -95,30 +95,41 @@ io.on('connection', (socket) => {
 
   // Handle sending a message
   socket.on('sendMessage', (data) => {
-    const { chatId, message } = data;
-    // Broadcast to the conversation room
-    io.to(`conversation_${chatId}`).emit('receiveMessage', { 
-      chatId, 
-      message 
+    const { chatId, message } = data || {};
+    if (!message) return;
+
+    const senderId = message.sender;
+    const receiverId = message.receiver || chatId;
+    if (!senderId || !receiverId) return;
+
+    // Deliver to receiver room with chatId mapped to sender for receiver UI
+    io.to(`user_${receiverId}`).emit('receiveMessage', {
+      chatId: senderId,
+      message
     });
   });
 
   // Handle typing indicator
   socket.on('typing', (data) => {
-    const { chatId, userId, userName } = data;
-    socket.to(`conversation_${chatId}`).emit('userTyping', { 
-      userId, 
+    const { chatId, userId, userName } = data || {};
+    if (!chatId || !userId) return;
+
+    // Send typing to target user room; chatId becomes sender id for receiver UI mapping
+    socket.to(`user_${chatId}`).emit('userTyping', {
+      userId,
       userName,
-      chatId 
+      chatId: userId
     });
   });
 
   // Handle stop typing
   socket.on('stopTyping', (data) => {
-    const { chatId, userId } = data;
-    socket.to(`conversation_${chatId}`).emit('userStopTyping', { 
+    const { chatId, userId } = data || {};
+    if (!chatId || !userId) return;
+
+    socket.to(`user_${chatId}`).emit('userStopTyping', {
       userId,
-      chatId 
+      chatId: userId
     });
   });
 
@@ -224,4 +235,3 @@ const startServer = async () => {
 };
 
 startServer();
-

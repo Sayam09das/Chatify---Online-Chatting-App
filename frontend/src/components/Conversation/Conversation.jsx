@@ -12,7 +12,7 @@ import API_URL, { API_ENDPOINTS } from '@/config/api';
 // Initialize socket connection
 const socket = io(API_URL, {
     withCredentials: true,
-    transports: ["websocket"],
+    transports: ["websocket", "polling"],
 });
 
 // Helper to format last seen
@@ -578,4 +578,3 @@ const Conversation = () => {
 };
 
 export default Conversation;
-
