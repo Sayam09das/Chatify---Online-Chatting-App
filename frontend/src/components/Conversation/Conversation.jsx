@@ -63,6 +63,22 @@ const Conversation = () => {
     const [showAudioCall, setShowAudioCall] = useState(false);
     const [incomingCall, setIncomingCall] = useState(null);
     const [currentCallId, setCurrentCallId] = useState(null);
+    const typingTimeoutsRef = useRef(new Map());
+    const chatsRef = useRef([]);
+
+    useEffect(() => {
+        chatsRef.current = chats;
+    }, [chats]);
+
+    const triggerBrowserNotification = (title, body = '') => {
+        if (typeof window === 'undefined' || !('Notification' in window)) return;
+        if (Notification.permission !== 'granted') return;
+        try {
+            new Notification(title, { body });
+        } catch (err) {
+            console.error('Browser notification failed:', err);
+        }
+    };
 
     const loadMessagesForChat = async (otherUserId) => {
         try {
@@ -193,6 +209,12 @@ const Conversation = () => {
 
     // Socket event listeners
     useEffect(() => {
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().catch(() => {});
+        }
+    }, []);
+
+    useEffect(() => {
         const activeChatId = activeChat?._id;
 
         // Handle receiving messages
@@ -220,6 +242,19 @@ const Conversation = () => {
                 }
                 return prevChats;
             });
+
+            if (activeChatId !== chatId) {
+                const senderName = chatsRef.current.find((c) => c._id === chatId)?.name || 'New message';
+                showNotification(`${senderName}: ${formattedMessage.text || 'sent a message'}`, 'success');
+                triggerBrowserNotification(senderName, formattedMessage.text || 'New message');
+            }
+        });
+
+        socket.on('messageNotification', ({ chatId, text }) => {
+            if (activeChatId === chatId) return;
+            const senderName = chatsRef.current.find((c) => c._id === chatId)?.name || 'New message';
+            showNotification(`${senderName}: ${text || 'sent a message'}`, 'success');
+            triggerBrowserNotification(senderName, text || 'New message');
         });
 
         // Handle user online
@@ -266,11 +301,19 @@ const Conversation = () => {
         socket.on('incomingCall', ({ callId, caller, type }) => {
             setIncomingCall({ callId, caller, type });
             setCurrentCallId(callId);
+            showNotification(`Incoming ${type} call from ${caller?.name || caller?.fullName || 'Unknown'}`, 'success');
+            triggerBrowserNotification('Incoming Call', `${caller?.name || caller?.fullName || 'Unknown'} is calling you`);
+            if (navigator?.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
             if (type === 'video') {
                 setShowVideoCall(true);
             } else {
                 setShowAudioCall(true);
             }
+        });
+
+        socket.on('callNotification', ({ callerName, type }) => {
+            showNotification(`Incoming ${type} call from ${callerName}`, 'success');
+            triggerBrowserNotification('Incoming Call', `${callerName} started a ${type} call`);
         });
 
         socket.on('callRinging', ({ callId }) => {
@@ -299,6 +342,9 @@ const Conversation = () => {
 
         // Handle typing events
         socket.on('userTyping', ({ userId, userName, chatId }) => {
+            const existing = typingTimeoutsRef.current.get(chatId);
+            if (existing) clearTimeout(existing);
+
             setChats(prevChats =>
                 prevChats.map(c => 
                     c._id === chatId ? { ...c, typing: true, typingName: userName } : c
@@ -309,9 +355,31 @@ const Conversation = () => {
                     ? { ...prev, typing: true, typingName: userName }
                     : prev
             ));
+
+            const timeoutId = setTimeout(() => {
+                setChats(prevChats =>
+                    prevChats.map(c =>
+                        c._id === chatId ? { ...c, typing: false, typingName: null } : c
+                    )
+                );
+                setActiveChat(prev => (
+                    prev && prev._id === chatId
+                        ? { ...prev, typing: false, typingName: null }
+                        : prev
+                ));
+                typingTimeoutsRef.current.delete(chatId);
+            }, 2500);
+
+            typingTimeoutsRef.current.set(chatId, timeoutId);
         });
 
         socket.on('userStopTyping', ({ userId, chatId }) => {
+            const existing = typingTimeoutsRef.current.get(chatId);
+            if (existing) {
+                clearTimeout(existing);
+                typingTimeoutsRef.current.delete(chatId);
+            }
+
             setChats(prevChats =>
                 prevChats.map(c => 
                     c._id === chatId ? { ...c, typing: false, typingName: null } : c
@@ -326,15 +394,22 @@ const Conversation = () => {
 
         return () => {
             socket.off('receiveMessage');
+            socket.off('messageNotification');
             socket.off('userOnline');
             socket.off('userOffline');
             socket.off('incomingCall');
+            socket.off('callNotification');
             socket.off('callRinging');
             socket.off('callAccepted');
             socket.off('callDeclined');
             socket.off('callEnded');
             socket.off('userTyping');
             socket.off('userStopTyping');
+
+            for (const timeoutId of typingTimeoutsRef.current.values()) {
+                clearTimeout(timeoutId);
+            }
+            typingTimeoutsRef.current.clear();
         };
     }, [activeChat?._id]);
 

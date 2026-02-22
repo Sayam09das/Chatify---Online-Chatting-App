@@ -109,6 +109,14 @@ io.on('connection', (socket) => {
       chatId: senderId,
       message
     });
+
+    io.to(`user_${receiverId}`).emit('messageNotification', {
+      chatId: senderId,
+      messageId: message._id,
+      text: message.text,
+      sender: senderId,
+      createdAt: message.createdAt || new Date().toISOString(),
+    });
   });
 
   // Handle call initiation
@@ -130,6 +138,13 @@ io.on('connection', (socket) => {
         profileImage: caller?.profileImage || '',
       },
       type,
+    });
+
+    io.to(`user_${calleeId}`).emit('callNotification', {
+      callId,
+      type,
+      callerId,
+      callerName: caller?.fullName || caller?.username || caller?.name || 'Unknown',
     });
 
     // Let caller know call is ringing
