@@ -7,6 +7,7 @@ import ChatArea from '@/Whatsapp/ChatArea';
 import VideoCall from '@/Whatsapp/Viedocall';
 import Phonecall from '@/Whatsapp/Phonecall';
 import API_URL, { API_ENDPOINTS } from '@/config/api';
+import { useRealtimeState } from '@/context/RealtimeStateContext';
 
 // Initialize socket connection
 const socket = io(API_URL, {
@@ -46,6 +47,7 @@ const getAvatarUrl = (profileImage) => {
 };
 
 const Conversation = () => {
+    const { state: realtimeState, dispatch: realtimeDispatch } = useRealtimeState();
     const [currentUser, setCurrentUser] = useState(null);
     const [chats, setChats] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
@@ -58,17 +60,27 @@ const Conversation = () => {
     const [error, setError] = useState(null);
     const [userStatuses, setUserStatuses] = useState({});
 
-    // Call states
-    const [showVideoCall, setShowVideoCall] = useState(false);
-    const [showAudioCall, setShowAudioCall] = useState(false);
-    const [incomingCall, setIncomingCall] = useState(null);
-    const [currentCallId, setCurrentCallId] = useState(null);
+    const [localStream, setLocalStream] = useState(null);
+    const [remoteStream, setRemoteStream] = useState(null);
+    const [isMuted, setIsMuted] = useState(false);
+    const [isVideoOff, setIsVideoOff] = useState(false);
+    const [isSpeakerOn, setIsSpeakerOn] = useState(false);
+    const [callDurationSec, setCallDurationSec] = useState(0);
     const typingTimeoutsRef = useRef(new Map());
     const chatsRef = useRef([]);
+    const receivedMessageIdsRef = useRef(new Set());
+    const notifiedMessageIdsRef = useRef(new Set());
+    const rtcPeerRef = useRef(null);
+    const pendingIceCandidatesRef = useRef([]);
 
     useEffect(() => {
         chatsRef.current = chats;
     }, [chats]);
+
+    useEffect(() => {
+        const totalUnread = Object.values(realtimeState.unreadByChat).reduce((sum, n) => sum + (n || 0), 0);
+        document.title = totalUnread > 0 ? `(${totalUnread}) Chatify` : 'Chatify';
+    }, [realtimeState.unreadByChat]);
 
     const triggerBrowserNotification = (title, body = '') => {
         if (typeof window === 'undefined' || !('Notification' in window)) return;
@@ -78,6 +90,97 @@ const Conversation = () => {
         } catch (err) {
             console.error('Browser notification failed:', err);
         }
+    };
+
+    const activeCall = realtimeState.call;
+    const isCallOpen = activeCall.status !== 'idle' && activeCall.status !== 'ended' && !!activeCall.type;
+    const isIncomingCall = activeCall.isIncoming && activeCall.status === 'ringing';
+    const callDuration = `${Math.floor(callDurationSec / 60).toString().padStart(2, '0')}:${(callDurationSec % 60).toString().padStart(2, '0')}`;
+
+    useEffect(() => {
+        if (activeCall.status !== 'in_call') return;
+        const timer = setInterval(() => setCallDurationSec((prev) => prev + 1), 1000);
+        return () => clearInterval(timer);
+    }, [activeCall.status]);
+
+    useEffect(() => {
+        return () => {
+            cleanupCallMedia();
+        };
+    }, []);
+
+    const cleanupCallMedia = () => {
+        if (rtcPeerRef.current) {
+            rtcPeerRef.current.ontrack = null;
+            rtcPeerRef.current.onicecandidate = null;
+            rtcPeerRef.current.close();
+            rtcPeerRef.current = null;
+        }
+
+        if (localStream) {
+            localStream.getTracks().forEach((track) => track.stop());
+        }
+        if (remoteStream) {
+            remoteStream.getTracks().forEach((track) => track.stop());
+        }
+
+        pendingIceCandidatesRef.current = [];
+        setLocalStream(null);
+        setRemoteStream(null);
+        setIsMuted(false);
+        setIsVideoOff(false);
+        setIsSpeakerOn(false);
+        setCallDurationSec(0);
+    };
+
+    const createPeerConnection = (callId) => {
+        if (rtcPeerRef.current) return rtcPeerRef.current;
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+            ],
+        });
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('webrtc-ice-candidate', {
+                    callId,
+                    candidate: event.candidate,
+                });
+            }
+        };
+
+        pc.ontrack = (event) => {
+            const stream = event.streams?.[0];
+            if (stream) {
+                setRemoteStream(stream);
+                realtimeDispatch({ type: 'SET_CALL', payload: { status: 'in_call' } });
+            }
+        };
+
+        rtcPeerRef.current = pc;
+        return pc;
+    };
+
+    const ensureLocalStream = async (type) => {
+        if (localStream) return localStream;
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: type === 'video',
+        });
+        setLocalStream(stream);
+        return stream;
+    };
+
+    const attachLocalTracks = (pc, stream) => {
+        const existingSenders = pc.getSenders();
+        stream.getTracks().forEach((track) => {
+            const sender = existingSenders.find((s) => s.track && s.track.kind === track.kind);
+            if (!sender) {
+                pc.addTrack(track, stream);
+            }
+        });
     };
 
     const loadMessagesForChat = async (otherUserId) => {
@@ -219,6 +322,10 @@ const Conversation = () => {
 
         // Handle receiving messages
         socket.on('receiveMessage', ({ chatId, message }) => {
+            if (!message?._id) return;
+            if (receivedMessageIdsRef.current.has(message._id)) return;
+            receivedMessageIdsRef.current.add(message._id);
+
             const formattedMessage = {
                 ...message,
                 time: new Date(message.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -235,7 +342,6 @@ const Conversation = () => {
                                 messages: [...c.messages, formattedMessage],
                                 lastMessage: formattedMessage.text,
                                 time: 'now',
-                                unread: activeChatId === chatId ? c.unread : (c.unread || 0) + 1,
                             }
                             : c
                     );
@@ -244,13 +350,19 @@ const Conversation = () => {
             });
 
             if (activeChatId !== chatId) {
+                realtimeDispatch({ type: 'INCREMENT_UNREAD', payload: chatId });
+            }
+
+            if (activeChatId !== chatId) {
                 const senderName = chatsRef.current.find((c) => c._id === chatId)?.name || 'New message';
                 showNotification(`${senderName}: ${formattedMessage.text || 'sent a message'}`, 'success');
                 triggerBrowserNotification(senderName, formattedMessage.text || 'New message');
             }
         });
 
-        socket.on('messageNotification', ({ chatId, text }) => {
+        socket.on('messageNotification', ({ chatId, messageId, text }) => {
+            if (messageId && notifiedMessageIdsRef.current.has(messageId)) return;
+            if (messageId) notifiedMessageIdsRef.current.add(messageId);
             if (activeChatId === chatId) return;
             const senderName = chatsRef.current.find((c) => c._id === chatId)?.name || 'New message';
             showNotification(`${senderName}: ${text || 'sent a message'}`, 'success');
@@ -299,16 +411,25 @@ const Conversation = () => {
 
         // Handle incoming calls
         socket.on('incomingCall', ({ callId, caller, type }) => {
-            setIncomingCall({ callId, caller, type });
-            setCurrentCallId(callId);
+            if (activeCall.status !== 'idle' && activeCall.callId && activeCall.callId !== callId) {
+                socket.emit('declineCall', { callId });
+                return;
+            }
+
+            realtimeDispatch({
+                type: 'SET_CALL',
+                payload: {
+                    callId,
+                    type,
+                    status: 'ringing',
+                    isIncoming: true,
+                    peer: caller,
+                    error: null,
+                },
+            });
             showNotification(`Incoming ${type} call from ${caller?.name || caller?.fullName || 'Unknown'}`, 'success');
             triggerBrowserNotification('Incoming Call', `${caller?.name || caller?.fullName || 'Unknown'} is calling you`);
             if (navigator?.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
-            if (type === 'video') {
-                setShowVideoCall(true);
-            } else {
-                setShowAudioCall(true);
-            }
         });
 
         socket.on('callNotification', ({ callerName, type }) => {
@@ -317,27 +438,105 @@ const Conversation = () => {
         });
 
         socket.on('callRinging', ({ callId }) => {
-            setCurrentCallId(callId);
+            realtimeDispatch({ type: 'SET_CALL', payload: { callId, status: 'ringing' } });
             showNotification('Ringing...', 'success');
         });
 
-        socket.on('callAccepted', ({ callId }) => {
-            setCurrentCallId(callId);
+        socket.on('callAccepted', async ({ callId }) => {
+            if (activeCall.callId && activeCall.callId !== callId) return;
+            realtimeDispatch({ type: 'SET_CALL', payload: { callId, status: 'connecting' } });
             showNotification('Call accepted!', 'success');
+
+            const callType = activeCall.type;
+            const isCaller = !activeCall.isIncoming;
+
+            if (isCaller && callType) {
+                try {
+                    const stream = await ensureLocalStream(callType);
+                    const pc = createPeerConnection(callId);
+                    attachLocalTracks(pc, stream);
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    socket.emit('webrtc-offer', { callId, offer });
+                } catch (err) {
+                    console.error('Failed to create offer:', err);
+                    showNotification('Call setup failed', 'error');
+                    socket.emit('endCall', { callId });
+                    cleanupCallMedia();
+                    realtimeDispatch({ type: 'CLEAR_CALL' });
+                }
+            }
         });
 
         socket.on('callDeclined', ({ callId }) => {
+            if (activeCall.callId && activeCall.callId !== callId) return;
             showNotification('Call declined', 'error');
-            setShowVideoCall(false);
-            setShowAudioCall(false);
-            setCurrentCallId(null);
+            cleanupCallMedia();
+            realtimeDispatch({ type: 'CLEAR_CALL' });
         });
 
-        socket.on('callEnded', () => {
+        socket.on('callEnded', ({ callId }) => {
+            if (activeCall.callId && callId && activeCall.callId !== callId) return;
             showNotification('Call ended', 'error');
-            setShowVideoCall(false);
-            setShowAudioCall(false);
-            setCurrentCallId(null);
+            cleanupCallMedia();
+            realtimeDispatch({ type: 'CLEAR_CALL' });
+        });
+
+        socket.on('callUnavailable', ({ message }) => {
+            showNotification(message || 'Call unavailable', 'error');
+            cleanupCallMedia();
+            realtimeDispatch({ type: 'CLEAR_CALL' });
+        });
+
+        socket.on('webrtc-offer', async ({ callId, offer }) => {
+            if (activeCall.callId !== callId) return;
+            try {
+                const stream = await ensureLocalStream(activeCall.type || 'audio');
+                const pc = createPeerConnection(callId);
+                attachLocalTracks(pc, stream);
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+                while (pendingIceCandidatesRef.current.length) {
+                    const candidate = pendingIceCandidatesRef.current.shift();
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                }
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                socket.emit('webrtc-answer', { callId, answer });
+                realtimeDispatch({ type: 'SET_CALL', payload: { status: 'in_call', startedAt: Date.now() } });
+            } catch (err) {
+                console.error('Failed to process offer:', err);
+            }
+        });
+
+        socket.on('webrtc-answer', async ({ callId, answer }) => {
+            if (activeCall.callId !== callId || !rtcPeerRef.current) return;
+            try {
+                await rtcPeerRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+
+                while (pendingIceCandidatesRef.current.length) {
+                    const candidate = pendingIceCandidatesRef.current.shift();
+                    await rtcPeerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+                }
+
+                realtimeDispatch({ type: 'SET_CALL', payload: { status: 'in_call', startedAt: Date.now() } });
+            } catch (err) {
+                console.error('Failed to process answer:', err);
+            }
+        });
+
+        socket.on('webrtc-ice-candidate', async ({ callId, candidate }) => {
+            if (activeCall.callId !== callId || !candidate) return;
+            try {
+                if (!rtcPeerRef.current || !rtcPeerRef.current.remoteDescription) {
+                    pendingIceCandidatesRef.current.push(candidate);
+                    return;
+                }
+                await rtcPeerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+                console.error('Failed to add ICE candidate:', err);
+            }
         });
 
         // Handle typing events
@@ -403,6 +602,10 @@ const Conversation = () => {
             socket.off('callAccepted');
             socket.off('callDeclined');
             socket.off('callEnded');
+            socket.off('callUnavailable');
+            socket.off('webrtc-offer');
+            socket.off('webrtc-answer');
+            socket.off('webrtc-ice-candidate');
             socket.off('userTyping');
             socket.off('userStopTyping');
 
@@ -411,7 +614,7 @@ const Conversation = () => {
             }
             typingTimeoutsRef.current.clear();
         };
-    }, [activeChat?._id]);
+    }, [activeChat?._id, activeCall.callId, activeCall.isIncoming, activeCall.status, activeCall.type, realtimeDispatch]);
 
     // Notification helper
     const showNotification = (message, type = 'success') => {
@@ -436,8 +639,9 @@ const Conversation = () => {
         };
 
         if (existingChat) {
-            setChats(prevChats => prevChats.map(c => c._id === user._id ? { ...c, unread: 0 } : c));
-            setActiveChat({ ...existingChat, unread: 0 });
+            realtimeDispatch({ type: 'RESET_UNREAD', payload: user._id });
+            realtimeDispatch({ type: 'SET_ACTIVE_CHAT', payload: user._id });
+            setActiveChat(existingChat);
         } else {
             const newChat = {
                 _id: user._id,
@@ -454,6 +658,7 @@ const Conversation = () => {
             };
             setChats(prev => [newChat, ...prev]);
             setActiveChat(newChat);
+            realtimeDispatch({ type: 'SET_ACTIVE_CHAT', payload: user._id });
         }
 
         loadMessagesForChat(user._id);
@@ -463,8 +668,9 @@ const Conversation = () => {
 
     // Handle selecting a chat
     const handleSelectChat = (chat) => {
-        setChats(prevChats => prevChats.map(c => c._id === chat._id ? { ...c, unread: 0 } : c));
-        setActiveChat({ ...chat, unread: 0 });
+        realtimeDispatch({ type: 'RESET_UNREAD', payload: chat._id });
+        realtimeDispatch({ type: 'SET_ACTIVE_CHAT', payload: chat._id });
+        setActiveChat(chat);
         loadMessagesForChat(chat._id);
         if (isMobile) setShowSidebar(false);
     };
@@ -480,25 +686,30 @@ const Conversation = () => {
 
             const savedMessage = response.data?.message;
             if (!savedMessage) return;
+            const formattedSavedMessage = {
+                ...savedMessage,
+                time: new Date(savedMessage.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: 'sent',
+            };
 
             setChats(prevChats =>
                 prevChats.map(c =>
                     c._id === activeChat._id
-                        ? { ...c, messages: [...c.messages, savedMessage], lastMessage: savedMessage.text, time: 'now' }
+                        ? { ...c, messages: [...c.messages, formattedSavedMessage], lastMessage: formattedSavedMessage.text, time: 'now' }
                         : c
                 )
             );
 
             setActiveChat(prev => ({
                 ...prev,
-                messages: [...(prev?.messages || []), savedMessage],
-                lastMessage: savedMessage.text,
+                messages: [...(prev?.messages || []), formattedSavedMessage],
+                lastMessage: formattedSavedMessage.text,
                 time: 'now',
             }));
 
             socket.emit('sendMessage', {
                 chatId: activeChat._id,
-                message: savedMessage,
+                message: formattedSavedMessage,
             });
         } catch (err) {
             console.error('Failed to send message:', err);
@@ -528,6 +739,7 @@ const Conversation = () => {
     const handleBack = () => {
         setShowSidebar(true);
         setActiveChat(null);
+        realtimeDispatch({ type: 'SET_ACTIVE_CHAT', payload: null });
     };
 
     // Handle logout
@@ -547,48 +759,89 @@ const Conversation = () => {
             showNotification('Select a chat to start a call', 'error');
             return;
         }
+        if (activeCall.status !== 'idle' && activeCall.status !== 'ended') {
+            showNotification('You are already in a call', 'error');
+            return;
+        }
+
+        realtimeDispatch({
+            type: 'SET_CALL',
+            payload: {
+                callId: null,
+                type,
+                status: 'connecting',
+                isIncoming: false,
+                peer: activeChat,
+                error: null,
+            },
+        });
         
         socket.emit('initiateCall', {
             calleeId: activeChat._id,
             type,
             caller: currentUser,
         });
-
-        if (type === 'video') {
-            setShowVideoCall(true);
-        } else {
-            setShowAudioCall(true);
-        }
     };
 
-    const handleAcceptCall = () => {
-        if (incomingCall) {
-            socket.emit('acceptCall', { callId: incomingCall.callId });
+    const handleAcceptCall = async () => {
+        if (!activeCall.callId) return;
+        try {
+            await ensureLocalStream(activeCall.type || 'audio');
+            realtimeDispatch({ type: 'SET_CALL', payload: { status: 'connecting', isIncoming: false } });
+            socket.emit('acceptCall', { callId: activeCall.callId });
+        } catch (err) {
+            console.error('Accept call media error:', err);
+            showNotification('Microphone/Camera permission denied', 'error');
+            socket.emit('declineCall', { callId: activeCall.callId });
+            cleanupCallMedia();
+            realtimeDispatch({ type: 'CLEAR_CALL' });
         }
-        setIncomingCall(null);
     };
 
     const handleDeclineCall = () => {
-        if (incomingCall) {
-            socket.emit('declineCall', { callId: incomingCall.callId });
+        if (activeCall.callId) {
+            socket.emit('declineCall', { callId: activeCall.callId });
         }
-        setIncomingCall(null);
-        setShowVideoCall(false);
-        setShowAudioCall(false);
-        setCurrentCallId(null);
+        cleanupCallMedia();
+        realtimeDispatch({ type: 'CLEAR_CALL' });
     };
 
     const handleEndCall = () => {
-        if (currentCallId) {
-            socket.emit('endCall', { callId: currentCallId });
+        if (activeCall.callId) {
+            socket.emit('endCall', { callId: activeCall.callId });
         }
-        setShowVideoCall(false);
-        setShowAudioCall(false);
-        setIncomingCall(null);
-        setCurrentCallId(null);
+        cleanupCallMedia();
+        realtimeDispatch({ type: 'CLEAR_CALL' });
+    };
+
+    const handleToggleMute = () => {
+        if (!localStream) return;
+        const nextMuted = !isMuted;
+        localStream.getAudioTracks().forEach((t) => {
+            t.enabled = !nextMuted;
+        });
+        setIsMuted(nextMuted);
+    };
+
+    const handleToggleVideo = () => {
+        if (!localStream) return;
+        const nextVideoOff = !isVideoOff;
+        localStream.getVideoTracks().forEach((t) => {
+            t.enabled = !nextVideoOff;
+        });
+        setIsVideoOff(nextVideoOff);
+    };
+
+    const handleToggleSpeaker = () => {
+        setIsSpeakerOn((prev) => !prev);
     };
 
     // Get current chat messages
+    const chatsWithUnread = chats.map((c) => ({
+        ...c,
+        unread: realtimeState.unreadByChat[c._id] || 0,
+    }));
+
     const activeMessages = activeChat
         ? chats.find(c => c._id === activeChat._id)?.messages || []
         : [];
@@ -643,7 +896,7 @@ const Conversation = () => {
                     >
                         <Sidebar
                             currentUser={currentUser}
-                            chats={chats}
+                            chats={chatsWithUnread}
                             allUsers={allUsers}
                             activeChat={activeChat}
                             onSelectChat={handleSelectChat}
@@ -681,24 +934,40 @@ const Conversation = () => {
 
             {/* Video Call Modal */}
             <VideoCall
-                isOpen={showVideoCall}
+                isOpen={isCallOpen && activeCall.type === 'video'}
                 onClose={handleEndCall}
                 callType="video"
-                user={activeChat || incomingCall?.caller || { name: 'Unknown' }}
-                isIncoming={!!incomingCall && incomingCall.type === 'video'}
+                user={activeCall.peer || activeChat || { name: 'Unknown' }}
+                isIncoming={isIncomingCall && activeCall.type === 'video'}
+                callStatus={activeCall.status}
+                callDuration={callDuration}
+                localStream={localStream}
+                remoteStream={remoteStream}
+                isMuted={isMuted}
+                isVideoOff={isVideoOff}
                 onAccept={handleAcceptCall}
                 onDecline={handleDeclineCall}
+                onEnd={handleEndCall}
+                onToggleMute={handleToggleMute}
+                onToggleVideo={handleToggleVideo}
             />
 
             {/* Audio Call Modal */}
             <Phonecall
-                isOpen={showAudioCall}
+                isOpen={isCallOpen && activeCall.type === 'audio'}
                 onClose={handleEndCall}
                 callType="audio"
-                user={activeChat || incomingCall?.caller || { name: 'Unknown' }}
-                isIncoming={!!incomingCall && incomingCall.type === 'audio'}
+                user={activeCall.peer || activeChat || { name: 'Unknown' }}
+                isIncoming={isIncomingCall && activeCall.type === 'audio'}
+                callStatus={activeCall.status}
+                callDuration={callDuration}
+                isMuted={isMuted}
+                isSpeakerOn={isSpeakerOn}
                 onAccept={handleAcceptCall}
                 onDecline={handleDeclineCall}
+                onEnd={handleEndCall}
+                onToggleMute={handleToggleMute}
+                onToggleSpeaker={handleToggleSpeaker}
             />
 
             {/* Notifications */}

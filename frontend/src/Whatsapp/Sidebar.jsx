@@ -293,7 +293,7 @@ const Sidebar = ({
                                 <motion.span
                                     initial={{ scale: 0 }}
                                     animate={{ scale: 1 }}
-                                    className="bg-[#25d366] text-[#111b21] text-[11px] font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center leading-none"
+                                    className="bg-[#ef4444] text-white text-[11px] font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center leading-none shadow-[0_0_0_2px_#111b21]"
                                 >
                                     {chat.unread > 99 ? '99+' : chat.unread}
                                 </motion.span>
