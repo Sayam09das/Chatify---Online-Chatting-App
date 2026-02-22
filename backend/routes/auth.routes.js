@@ -150,22 +150,22 @@ router.post('/google', googleAuthLimiter, validateGoogleAuth, authController.goo
 // @route   POST /api/auth/verify-email
 // @desc    Verify email address
 // @access  Public
-router.post('/verify-email', validateVerifyEmail, authController.verifyEmail);
+router.post('/verify-email', authController.verifyEmail);
 
 // @route   POST /api/auth/resend-verification
 // @desc    Resend verification email
 // @access  Public
-router.post('/resend-verification', forgotPasswordLimiter, validateResendVerification, authController.resendVerification);
+router.post('/resend-verification', forgotPasswordLimiter, authController.resendVerification);
 
 // @route   POST /api/auth/forgot-password
 // @desc    Request password reset
 // @access  Public
-router.post('/forgot-password', forgotPasswordLimiter, validateForgotPassword, authController.forgotPassword);
+router.post('/forgot-password', forgotPasswordLimiter, authController.forgotPassword);
 
 // @route   POST /api/auth/reset-password
 // @desc    Reset password with token
 // @access  Public
-router.post('/reset-password', validateResetPassword, authController.resetPassword);
+router.post('/reset-password', authController.resetPassword);
 
 // @route   POST /api/auth/logout
 // @desc    Logout user
@@ -193,4 +193,3 @@ router.get('/me', authMiddleware.protect, authController.getMe);
 router.put('/password', authMiddleware.protect, validatePasswordUpdate, authController.updatePassword);
 
 module.exports = router;
-

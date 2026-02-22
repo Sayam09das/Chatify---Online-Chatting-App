@@ -78,9 +78,7 @@ const ForgotPasswordPage = () => {
                 toast.success('Password reset email sent successfully! Please check your inbox.');
             }
         } catch (error) {
-            // Even if there's an error, show success to prevent email enumeration
-            setIsSubmitted(true);
-            toast.success('If an account exists with this email, a password reset link has been sent.');
+            toast.error(error.response?.data?.message || 'Password reset by email is disabled.');
         } finally {
             setIsLoading(false);
         }
@@ -97,7 +95,7 @@ const ForgotPasswordPage = () => {
                 toast.success('Password reset email sent again! Please check your inbox.');
             }
         } catch (error) {
-            toast.success('If an account exists with this email, a password reset link has been sent.');
+            toast.error(error.response?.data?.message || 'Password reset by email is disabled.');
         } finally {
             setIsLoading(false);
         }
@@ -497,4 +495,3 @@ const ForgotPasswordPage = () => {
 };
 
 export default ForgotPasswordPage;
-

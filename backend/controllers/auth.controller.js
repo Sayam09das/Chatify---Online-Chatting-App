@@ -2,7 +2,6 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('argon2');
 const { validationResult } = require('express-validator');
-const { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail, verifyToken } = require('../utils/email.util');
 
 // Generate tokens
 const generateTokens = (userId) => {
@@ -149,12 +148,6 @@ exports.googleAuth = async (req, res) => {
         isOnline: true
       });
 
-      // Send welcome email
-      try {
-        await sendWelcomeEmail(user);
-      } catch (emailError) {
-        console.log('Welcome email failed:', emailError.message);
-      }
     }
 
     // Update online status
@@ -238,22 +231,8 @@ exports.register = async (req, res) => {
       email,
       password: hashedPassword,
       provider: 'local',
-      emailVerified: false
+      emailVerified: true
     });
-
-    // Send verification email
-    try {
-      await sendVerificationEmail(user);
-    } catch (emailError) {
-      console.error('Verification email failed:', emailError.message);
-      await User.findByIdAndDelete(user._id).catch((cleanupError) => {
-        console.error('Failed to rollback user after email failure:', cleanupError.message);
-      });
-      return res.status(503).json({
-        success: false,
-        message: 'Could not send verification email right now. Please try again in a few minutes.'
-      });
-    }
 
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user._id);
@@ -275,7 +254,7 @@ exports.register = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful. Please check your email to verify your account.',
+      message: 'Registration successful.',
       user: userResponse
     });
   } catch (error) {
@@ -352,16 +331,7 @@ exports.login = async (req, res) => {
     await user.resetLoginAttempts();
 
     if (!user.emailVerified && user.provider === 'local') {
-      try {
-        await sendVerificationEmail(user);
-      } catch (emailError) {
-        console.error('Auto resend verification failed during login:', emailError.message);
-      }
-
-      return res.status(403).json({
-        success: false,
-        message: 'Email not verified. A new verification link was sent if email delivery is configured.'
-      });
+      user.emailVerified = true;
     }
 
     user.isOnline = true;
@@ -407,47 +377,9 @@ exports.login = async (req, res) => {
 // @access  Public
 exports.verifyEmail = async (req, res) => {
   try {
-    const { token } = req.body;
-
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        message: 'Verification token is required'
-      });
-    }
-
-    let decoded;
-    try {
-      decoded = verifyToken(token, 'email_verification');
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired verification token'
-      });
-    }
-
-    const user = await User.findById(decoded.userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    if (user.emailVerified) {
-      return res.json({
-        success: true,
-        message: 'Email already verified'
-      });
-    }
-
-    user.emailVerified = true;
-    await user.save();
-
     res.json({
       success: true,
-      message: 'Email verified successfully'
+      message: 'Email verification is disabled. Your account is already active.'
     });
   } catch (error) {
     console.error('Verify email error:', error);
@@ -463,51 +395,9 @@ exports.verifyEmail = async (req, res) => {
 // @access  Public
 exports.resendVerification = async (req, res) => {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-    }
-
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      return res.json({
-        success: true,
-        message: 'If an account exists with this email, a verification email has been sent'
-      });
-    }
-
-    if (user.emailVerified) {
-      return res.json({
-        success: true,
-        message: 'Email is already verified'
-      });
-    }
-
-    if (user.provider !== 'local') {
-      return res.status(400).json({
-        success: false,
-        message: 'This account uses OAuth login'
-      });
-    }
-
-    try {
-      await sendVerificationEmail(user);
-    } catch (emailError) {
-      console.error('Resend verification email failed:', emailError.message);
-      return res.status(503).json({
-        success: false,
-        message: 'Could not send verification email right now. Please try again in a few minutes.'
-      });
-    }
-
     res.json({
       success: true,
-      message: 'Verification email sent'
+      message: 'Email verification is disabled. Your account is already active.'
     });
   } catch (error) {
     console.error('Resend verification error:', error);
@@ -523,37 +413,9 @@ exports.resendVerification = async (req, res) => {
 // @access  Public
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-    }
-
-    const user = await User.findOne({ email });
-
-    if (!user || user.provider !== 'local') {
-      return res.json({
-        success: true,
-        message: 'If an account exists with this email, a password reset email has been sent'
-      });
-    }
-
-    try {
-      await sendPasswordResetEmail(user);
-    } catch (emailError) {
-      console.error('Password reset email failed:', emailError.message);
-      return res.status(503).json({
-        success: false,
-        message: 'Could not send password reset email right now. Please try again in a few minutes.'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Password reset email sent'
+    res.status(410).json({
+      success: false,
+      message: 'Password reset by email is disabled.'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -569,65 +431,9 @@ exports.forgotPassword = async (req, res) => {
 // @access  Public
 exports.resetPassword = async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
-
-    if (!token || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token and new password are required'
-      });
-    }
-
-    if (newPassword.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 8 characters'
-      });
-    }
-
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-      });
-    }
-
-    let decoded;
-    try {
-      decoded = verifyToken(token, 'password_reset');
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired reset token'
-      });
-    }
-
-    const user = await User.findById(decoded.userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    if (user.provider !== 'local') {
-      return res.status(400).json({
-        success: false,
-        message: 'This account uses OAuth login. Please use Google to sign in.'
-      });
-    }
-
-    user.password = await bcrypt.hash(newPassword, 12);
-    user.passwordChangedAt = new Date();
-    user.refreshTokens = [];
-    user.tokenVersion += 1;
-    
-    await user.save();
-
-    res.json({
-      success: true,
-      message: 'Password reset successful'
+    res.status(410).json({
+      success: false,
+      message: 'Password reset by email is disabled.'
     });
   } catch (error) {
     console.error('Reset password error:', error);

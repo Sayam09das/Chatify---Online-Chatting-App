@@ -189,7 +189,7 @@ const RegisterPage = () => {
             const response = await axios.post(API_ENDPOINTS.register, formDataToSend);
 
             if (response.data.success) {
-                toast.success('🎉 Account created successfully! Please check your email to verify your account.');
+                toast.success('🎉 Account created successfully!');
                 setFormData({ username: '', fullName: '', email: '', phone: '', password: '', confirmPassword: '', profileImage: null });
                 setStep(1);
                 setTimeout(() => navigate('/login'), 2000);
@@ -858,4 +858,3 @@ const RegisterPage = () => {
 };
 
 export default RegisterPage;
-

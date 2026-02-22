@@ -81,12 +81,6 @@ const LoginPage = () => {
         if (token) {
           localStorage.setItem('token', token);
         }
-        
-        // Check if email is verified for local accounts
-        if (!user.emailVerified && user.provider === 'local') {
-          toast.warning('Please verify your email before continuing. Check your inbox for the verification link.');
-          return;
-        }
       }
       toast.success('Login successful!');
       setTimeout(() => navigate('/chatify'), 1000);
@@ -380,4 +374,3 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
-
