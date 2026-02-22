@@ -1,39 +1,87 @@
 const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 
-// Initialize SendGrid with API key
-const initializeSendGrid = () => {
-  if (process.env.SENDGRID_API_KEY) {
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-    return true;
-  }
-  console.warn('SENDGRID_API_KEY not configured. Email sending disabled.');
-  return false;
+let smtpTransporter = null;
+let sendGridInitialized = false;
+
+const hasSendGridConfig = () => Boolean(process.env.SENDGRID_API_KEY);
+const hasSmtpConfig = () => Boolean(
+  process.env.SMTP_HOST &&
+  process.env.SMTP_PORT &&
+  process.env.SMTP_USER &&
+  process.env.SMTP_PASS
+);
+
+const getEmailProvider = () => {
+  if (hasSendGridConfig()) return 'sendgrid';
+  if (hasSmtpConfig()) return 'smtp';
+  return null;
 };
 
-// Send email using SendGrid
+const initializeSendGrid = () => {
+  if (!hasSendGridConfig()) return false;
+  if (!sendGridInitialized) {
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    sendGridInitialized = true;
+  }
+  return true;
+};
+
+const getSmtpTransporter = () => {
+  if (!hasSmtpConfig()) return null;
+  if (!smtpTransporter) {
+    smtpTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT),
+      secure: Number(process.env.SMTP_PORT) === 465,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+  return smtpTransporter;
+};
+
 const sendEmail = async ({ to, subject, text, html, templateId, dynamicTemplateData }) => {
-  if (!initializeSendGrid()) {
-    console.log(`[Email Mock] To: ${to}, Subject: ${subject}`);
-    return { success: true, mock: true };
+  const provider = getEmailProvider();
+  if (!provider) {
+    throw new Error('Email service is not configured. Set SENDGRID_API_KEY or SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS.');
   }
 
-  const msg = {
-    to,
-    from: process.env.EMAIL_FROM || 'noreply@chatify.app',
-    subject,
-    text,
-    html,
-    templateId,
-    dynamicTemplateData,
-  };
-
+  const from = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@chatify.app';
   try {
-    await sgMail.send(msg);
-    return { success: true };
+    if (provider === 'sendgrid') {
+      initializeSendGrid();
+      await sgMail.send({
+        to,
+        from,
+        subject,
+        text,
+        html,
+        templateId,
+        dynamicTemplateData,
+      });
+      return { success: true, provider: 'sendgrid' };
+    }
+
+    const transporter = getSmtpTransporter();
+    if (!transporter) {
+      throw new Error('SMTP transporter initialization failed.');
+    }
+    await transporter.sendMail({
+      to,
+      from,
+      subject,
+      text,
+      html,
+    });
+    return { success: true, provider: 'smtp' };
   } catch (error) {
-    console.error('SendGrid Error:', error.response ? error.response.body : error.message);
-    return { success: false, error: error.message };
+    const sendGridMessage = error?.response?.body?.errors?.[0]?.message;
+    const message = sendGridMessage || error.message || 'Unknown email delivery error';
+    throw new Error(`Failed to send email via ${provider}: ${message}`);
   }
 };
 
@@ -255,5 +303,5 @@ module.exports = {
   sendPasswordResetEmail,
   sendWelcomeEmail,
   initializeSendGrid,
+  getEmailProvider,
 };
-

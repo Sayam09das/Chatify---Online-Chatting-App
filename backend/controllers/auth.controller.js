@@ -245,7 +245,14 @@ exports.register = async (req, res) => {
     try {
       await sendVerificationEmail(user);
     } catch (emailError) {
-      console.log('Verification email failed:', emailError.message);
+      console.error('Verification email failed:', emailError.message);
+      await User.findByIdAndDelete(user._id).catch((cleanupError) => {
+        console.error('Failed to rollback user after email failure:', cleanupError.message);
+      });
+      return res.status(503).json({
+        success: false,
+        message: 'Could not send verification email right now. Please try again in a few minutes.'
+      });
     }
 
     // Generate tokens
@@ -343,6 +350,19 @@ exports.login = async (req, res) => {
     }
 
     await user.resetLoginAttempts();
+
+    if (!user.emailVerified && user.provider === 'local') {
+      try {
+        await sendVerificationEmail(user);
+      } catch (emailError) {
+        console.error('Auto resend verification failed during login:', emailError.message);
+      }
+
+      return res.status(403).json({
+        success: false,
+        message: 'Email not verified. A new verification link was sent if email delivery is configured.'
+      });
+    }
 
     user.isOnline = true;
     user.lastSeen = new Date();
@@ -478,7 +498,11 @@ exports.resendVerification = async (req, res) => {
     try {
       await sendVerificationEmail(user);
     } catch (emailError) {
-      console.log('Resend verification email failed:', emailError.message);
+      console.error('Resend verification email failed:', emailError.message);
+      return res.status(503).json({
+        success: false,
+        message: 'Could not send verification email right now. Please try again in a few minutes.'
+      });
     }
 
     res.json({
@@ -520,7 +544,11 @@ exports.forgotPassword = async (req, res) => {
     try {
       await sendPasswordResetEmail(user);
     } catch (emailError) {
-      console.log('Password reset email failed:', emailError.message);
+      console.error('Password reset email failed:', emailError.message);
+      return res.status(503).json({
+        success: false,
+        message: 'Could not send password reset email right now. Please try again in a few minutes.'
+      });
     }
 
     res.json({
@@ -826,4 +854,3 @@ exports.updatePassword = async (req, res) => {
     });
   }
 };
-
