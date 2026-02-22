@@ -22,7 +22,16 @@ const io = new Server(server, {
 
 // Track connected users: Map<userId, socketId>
 const connectedUsers = new Map();
-const activeCalls = new Map(); // Map<callId, { callerId, calleeId, type }>
+const activeCalls = new Map(); // Map<callId, { callerId, calleeId, type, status }>
+
+const findActiveCallByUser = (userId) => {
+  for (const [callId, call] of activeCalls.entries()) {
+    if ((call.callerId === userId || call.calleeId === userId) && call.status !== 'ended') {
+      return { callId, call };
+    }
+  }
+  return null;
+};
 
 // Helper to format last seen
 const formatLastSeen = (date) => {
@@ -124,9 +133,37 @@ io.on('connection', (socket) => {
     const { calleeId, type, caller } = data || {};
     const callerId = socket.userId;
     if (!callerId || !calleeId || !type) return;
+    if (callerId === calleeId) return;
+
+    const callerBusy = findActiveCallByUser(callerId);
+    if (callerBusy) {
+      io.to(`user_${callerId}`).emit('callUnavailable', {
+        reason: 'busy',
+        message: 'You are already in another call.',
+      });
+      return;
+    }
+
+    const calleeBusy = findActiveCallByUser(calleeId);
+    if (calleeBusy) {
+      io.to(`user_${callerId}`).emit('callUnavailable', {
+        reason: 'busy',
+        message: 'User is busy on another call.',
+      });
+      return;
+    }
+
+    const calleeSocketId = connectedUsers.get(calleeId);
+    if (!calleeSocketId) {
+      io.to(`user_${callerId}`).emit('callUnavailable', {
+        reason: 'offline',
+        message: 'User is offline.',
+      });
+      return;
+    }
 
     const callId = randomUUID();
-    activeCalls.set(callId, { callerId, calleeId, type });
+    activeCalls.set(callId, { callerId, calleeId, type, status: 'ringing' });
 
     io.to(`user_${calleeId}`).emit('incomingCall', {
       callId,
@@ -156,6 +193,10 @@ io.on('connection', (socket) => {
     if (!callId) return;
     const call = activeCalls.get(callId);
     if (!call) return;
+    if (socket.userId !== call.calleeId) return;
+
+    call.status = 'accepted';
+    activeCalls.set(callId, call);
 
     io.to(`user_${call.callerId}`).emit('callAccepted', { callId, by: call.calleeId });
     io.to(`user_${call.calleeId}`).emit('callAccepted', { callId, by: call.calleeId });
@@ -167,8 +208,8 @@ io.on('connection', (socket) => {
     const call = activeCalls.get(callId);
     if (!call) return;
 
-    io.to(`user_${call.callerId}`).emit('callDeclined', { callId, by: call.calleeId });
-    io.to(`user_${call.calleeId}`).emit('callDeclined', { callId, by: call.calleeId });
+    io.to(`user_${call.callerId}`).emit('callDeclined', { callId, by: socket.userId || call.calleeId });
+    io.to(`user_${call.calleeId}`).emit('callDeclined', { callId, by: socket.userId || call.calleeId });
     activeCalls.delete(callId);
   });
 
@@ -178,9 +219,54 @@ io.on('connection', (socket) => {
     const call = activeCalls.get(callId);
     if (!call) return;
 
-    io.to(`user_${call.callerId}`).emit('callEnded', { callId });
-    io.to(`user_${call.calleeId}`).emit('callEnded', { callId });
+    io.to(`user_${call.callerId}`).emit('callEnded', { callId, by: socket.userId });
+    io.to(`user_${call.calleeId}`).emit('callEnded', { callId, by: socket.userId });
     activeCalls.delete(callId);
+  });
+
+  // WebRTC offer relay
+  socket.on('webrtc-offer', ({ callId, offer } = {}) => {
+    if (!callId || !offer) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    const targetUserId = socket.userId === call.callerId ? call.calleeId : call.callerId;
+    if (!targetUserId) return;
+
+    io.to(`user_${targetUserId}`).emit('webrtc-offer', {
+      callId,
+      offer,
+      from: socket.userId,
+    });
+  });
+
+  // WebRTC answer relay
+  socket.on('webrtc-answer', ({ callId, answer } = {}) => {
+    if (!callId || !answer) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    const targetUserId = socket.userId === call.callerId ? call.calleeId : call.callerId;
+    if (!targetUserId) return;
+
+    io.to(`user_${targetUserId}`).emit('webrtc-answer', {
+      callId,
+      answer,
+      from: socket.userId,
+    });
+  });
+
+  // WebRTC ICE relay
+  socket.on('webrtc-ice-candidate', ({ callId, candidate } = {}) => {
+    if (!callId || !candidate) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    const targetUserId = socket.userId === call.callerId ? call.calleeId : call.callerId;
+    if (!targetUserId) return;
+
+    io.to(`user_${targetUserId}`).emit('webrtc-ice-candidate', {
+      callId,
+      candidate,
+      from: socket.userId,
+    });
   });
 
   // Handle typing indicator
